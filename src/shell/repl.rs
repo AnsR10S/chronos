@@ -13,18 +13,14 @@ pub fn start() {
 
         let trimmed_input = user_input.trim();
 
-        // Split the input by whitespace.
-        // The first word is the command, everything else becomes the arguments.
         let mut parts = trimmed_input.split_whitespace();
         let command = parts.next().unwrap_or("");
         let args: Vec<&str> = parts.collect();
 
-        // Pass both the command and the arguments to the executor
         match builtin::execute(command, &args) {
             BuiltinStatus::Exit => break,
             BuiltinStatus::Handled => continue,
             BuiltinStatus::NotHandled => {
-                // Notice we now print just the `command` variable, not the whole input!
                 println!("{}: command not found", command);
             }
         }

@@ -1,17 +1,17 @@
-// Represents the execution state of a builtin command.
-// This allows the REPL to know exactly how to proceed after a command is evaluated.
+// Declare the new echo module
+pub mod echo;
+
 pub enum BuiltinStatus {
     Handled,
     NotHandled,
     Exit,
 }
 
-// Evaluates the raw command string to determine if it is a builtin.
-pub fn execute(command: &str) -> BuiltinStatus {
+pub fn execute(command: &str, args: &[&str]) -> BuiltinStatus {
     match command {
-        // If the command is exactly "exit", signal the REPL to terminate
         "exit" => BuiltinStatus::Exit,
-        // Fallback for anything else we don't recognize yet
+        // Route the arguments to the dedicated echo module
+        "echo" => echo::execute(args),
         _ => BuiltinStatus::NotHandled,
     }
 }

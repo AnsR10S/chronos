@@ -1,15 +1,11 @@
 use std::io::{self, Write};
-// Import your new builtin module so the REPL can access the execute function
 use crate::shell::builtin::{self, BuiltinStatus};
 
 pub fn start() {
-    // The core Read-Eval-Print Loop
     loop {
-        // Print the prompt and flush the buffer
         print!("$ ");
         io::stdout().flush().unwrap();
 
-        // Read standard input
         let mut user_input = String::new();
         io::stdin()
             .read_line(&mut user_input)
@@ -17,16 +13,19 @@ pub fn start() {
 
         let trimmed_input = user_input.trim();
 
-        // Pass the command to the middleware pipeline for evaluation
-        match builtin::execute(trimmed_input) {
-            // Terminate the infinite loop if the user typed "exit"
+        // Split the input by whitespace.
+        // The first word is the command, everything else becomes the arguments.
+        let mut parts = trimmed_input.split_whitespace();
+        let command = parts.next().unwrap_or("");
+        let args: Vec<&str> = parts.collect();
+
+        // Pass both the command and the arguments to the executor
+        match builtin::execute(command, &args) {
             BuiltinStatus::Exit => break,
-            // Skip the rest of the loop if a builtin executed successfully
-            // (useful for future commands like 'echo' or 'pwd')
             BuiltinStatus::Handled => continue,
-            // Fallback to the default error handling if it wasn't a builtin
             BuiltinStatus::NotHandled => {
-                println!("{}: command not found", trimmed_input);
+                // Notice we now print just the `command` variable, not the whole input!
+                println!("{}: command not found", command);
             }
         }
     }

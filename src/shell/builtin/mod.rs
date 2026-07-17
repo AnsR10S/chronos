@@ -1,7 +1,8 @@
 use std::env;
 
+// Declare the cd module
+pub mod cd;
 pub mod echo;
-// Declare the pwd module
 pub mod pwd;
 pub mod type_cmd;
 
@@ -11,8 +12,8 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-// Add "pwd" to the list of known builtins
-pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd"];
+// Add "cd" to the list of known builtins
+pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd"];
 
 pub fn find_executable(cmd: &str) -> Option<String> {
     let path_var = env::var("PATH").unwrap_or_default();
@@ -46,8 +47,9 @@ pub fn execute(command: &str, args: &[&str]) -> BuiltinStatus {
         "exit" => BuiltinStatus::Exit,
         "echo" => echo::execute(args),
         "type" => type_cmd::execute(args),
-        // Route the pwd command
         "pwd" => pwd::execute(args),
+        // Route the cd command
+        "cd" => cd::execute(args),
         _ => BuiltinStatus::NotHandled,
     }
 }

@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 use std::process::Command;
 use crate::shell::builtin::{self, BuiltinStatus, find_executable};
+// Import the tokenizer
+use crate::lexer::lexer::tokenize;
 
 pub fn start() {
     loop {
@@ -18,9 +20,17 @@ pub fn start() {
             continue;
         }
 
-        let mut parts = trimmed_input.split_whitespace();
-        let command = parts.next().unwrap_or("");
-        let args: Vec<&str> = parts.collect();
+        // Pass the input through your lexical analyzer
+        let tokens = tokenize(trimmed_input);
+
+        // Safety check: if tokenization resulted in nothing, skip
+        if tokens.is_empty() {
+            continue;
+        }
+
+        // Extract the command (first token) and args (the rest) as &str
+        let command = tokens[0].as_str();
+        let args: Vec<&str> = tokens.iter().skip(1).map(|s| s.as_str()).collect();
 
         match builtin::execute(command, &args) {
             BuiltinStatus::Exit => break,

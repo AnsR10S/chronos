@@ -1,6 +1,5 @@
 use std::env;
 
-// Declare the cd module
 pub mod cd;
 pub mod echo;
 pub mod pwd;
@@ -12,7 +11,6 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-// Add "cd" to the list of known builtins
 pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd"];
 
 pub fn find_executable(cmd: &str) -> Option<String> {
@@ -48,7 +46,6 @@ pub fn execute(command: &str, args: &[&str]) -> BuiltinStatus {
         "echo" => echo::execute(args),
         "type" => type_cmd::execute(args),
         "pwd" => pwd::execute(args),
-        // Route the cd command
         "cd" => cd::execute(args),
         _ => BuiltinStatus::NotHandled,
     }

@@ -1,4 +1,5 @@
 use std::env;
+use crate::parser::ast::Redirect;
 
 pub mod cd;
 pub mod echo;
@@ -40,10 +41,12 @@ pub fn find_executable(cmd: &str) -> Option<String> {
     None
 }
 
-pub fn execute(command: &str, args: &[&str]) -> BuiltinStatus {
+// Added stdout to the signature
+pub fn execute(command: &str, args: &[&str], stdout: &Redirect) -> BuiltinStatus {
     match command {
         "exit" => BuiltinStatus::Exit,
-        "echo" => echo::execute(args),
+        // Pass stdout down to echo
+        "echo" => echo::execute(args, stdout),
         "type" => type_cmd::execute(args),
         "pwd" => pwd::execute(args),
         "cd" => cd::execute(args),

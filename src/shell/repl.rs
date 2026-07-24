@@ -1,8 +1,7 @@
 use std::io::{self, Write};
-use std::process::Command;
-use crate::shell::builtin::{self, BuiltinStatus, find_executable};
-// Import the tokenizer
 use crate::lexer::lexer::tokenize;
+// We now route execution through our single transaction executor
+use crate::executor::single;
 
 pub fn start() {
     loop {
@@ -20,7 +19,7 @@ pub fn start() {
             continue;
         }
 
-        // Pass the input through your lexical analyzer
+        // Pass raw input through your lexical analyzer
         let tokens = tokenize(trimmed_input);
 
         // Safety check: if tokenization resulted in nothing, skip
@@ -28,26 +27,10 @@ pub fn start() {
             continue;
         }
 
-        // Extract the command (first token) and args (the rest) as &str
-        let command = tokens[0].as_str();
-        let args: Vec<&str> = tokens.iter().skip(1).map(|s| s.as_str()).collect();
-
-        match builtin::execute(command, &args) {
-            BuiltinStatus::Exit => break,
-            BuiltinStatus::Handled => continue,
-            BuiltinStatus::NotHandled => {
-                if find_executable(command).is_some() {
-                    let mut child = Command::new(command);
-                    child.args(&args);
-
-                    match child.status() {
-                        Ok(_) => {}
-                        Err(e) => eprintln!("Failed to execute {}: {}", command, e),
-                    }
-                } else {
-                    println!("{}: command not found", command);
-                }
-            }
+        // Hand over the parsed tokens to the executor
+        // If execute() returns true, it means the user triggered the "exit" builtin.
+        if single::execute(tokens) {
+            break;
         }
     }
 }

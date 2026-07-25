@@ -1,36 +1,56 @@
-use std::io::{self, Write};
 use crate::lexer::lexer::tokenize;
-// We now route execution through our single transaction executor
 use crate::executor::single;
+use crate::shell::completion::ChronosHelper;
+use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
+use rustyline::Editor;
 
 pub fn start() {
+    // Initialize rustyline with our custom autocompletion helper
+    let mut rl = Editor::<ChronosHelper, DefaultHistory>::new()
+        .expect("Failed to initialize readline");
+
+    rl.set_helper(Some(ChronosHelper::default()));
+
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+        // rl.readline replaces our old print!("$ ") and read_line combo
+        let readline = rl.readline("$ ");
 
-        let mut user_input = String::new();
-        io::stdin()
-            .read_line(&mut user_input)
-            .expect("Failed to read line");
+        match readline {
+            Ok(line) => {
+                let trimmed_input = line.trim();
 
-        let trimmed_input = user_input.trim();
+                if trimmed_input.is_empty() {
+                    continue;
+                }
 
-        if trimmed_input.is_empty() {
-            continue;
-        }
+                // Free bonus feature: Rustyline natively handles terminal history!
+                let _ = rl.add_history_entry(trimmed_input);
 
-        // Pass raw input through your lexical analyzer
-        let tokens = tokenize(trimmed_input);
+                // Pass raw input through your lexical analyzer
+                let tokens = tokenize(trimmed_input);
 
-        // Safety check: if tokenization resulted in nothing, skip
-        if tokens.is_empty() {
-            continue;
-        }
+                if tokens.is_empty() {
+                    continue;
+                }
 
-        // Hand over the parsed tokens to the executor
-        // If execute() returns true, it means the user triggered the "exit" builtin.
-        if single::execute(tokens) {
-            break;
+                // Hand over the parsed tokens to the executor
+                if single::execute(tokens) {
+                    break;
+                }
+            },
+            Err(ReadlineError::Interrupted) => {
+                // Handles Ctrl-C gracefully
+                break;
+            },
+            Err(ReadlineError::Eof) => {
+                // Handles Ctrl-D (EOF) gracefully
+                break;
+            },
+            Err(err) => {
+                eprintln!("Error: {:?}", err);
+                break;
+            }
         }
     }
 }

@@ -41,11 +41,9 @@ pub fn find_executable(cmd: &str) -> Option<String> {
     None
 }
 
-// Added stdout to the signature
 pub fn execute(command: &str, args: &[&str], stdout: &Redirect) -> BuiltinStatus {
     match command {
         "exit" => BuiltinStatus::Exit,
-        // Pass stdout down to echo
         "echo" => echo::execute(args, stdout),
         "type" => type_cmd::execute(args),
         "pwd" => pwd::execute(args),

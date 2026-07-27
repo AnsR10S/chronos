@@ -3,17 +3,22 @@ use crate::executor::single;
 use crate::shell::completion::ChronosHelper;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
-use rustyline::Editor;
+// Import Config and CompletionType
+use rustyline::{Config, CompletionType, Editor};
 
 pub fn start() {
-    // Initialize rustyline with our custom autocompletion helper
-    let mut rl = Editor::<ChronosHelper, DefaultHistory>::new()
+    // Build a custom config specifying List completion, just like your final target!
+    let config = Config::builder()
+        .completion_type(CompletionType::List)
+        .build();
+
+    // Initialize rustyline with our config
+    let mut rl = Editor::<ChronosHelper, DefaultHistory>::with_config(config)
         .expect("Failed to initialize readline");
 
     rl.set_helper(Some(ChronosHelper::default()));
 
     loop {
-        // rl.readline replaces our old print!("$ ") and read_line combo
         let readline = rl.readline("$ ");
 
         match readline {
@@ -24,27 +29,18 @@ pub fn start() {
                     continue;
                 }
 
-                // Free bonus feature: Rustyline natively handles terminal history!
                 let _ = rl.add_history_entry(trimmed_input);
-
-                // Pass raw input through your lexical analyzer
                 let tokens = tokenize(trimmed_input);
 
                 if tokens.is_empty() {
                     continue;
                 }
 
-                // Hand over the parsed tokens to the executor
                 if single::execute(tokens) {
                     break;
                 }
             },
-            Err(ReadlineError::Interrupted) => {
-                // Handles Ctrl-C gracefully
-                break;
-            },
-            Err(ReadlineError::Eof) => {
-                // Handles Ctrl-D (EOF) gracefully
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 break;
             },
             Err(err) => {

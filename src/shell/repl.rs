@@ -3,16 +3,13 @@ use crate::executor::single;
 use crate::shell::completion::ChronosHelper;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
-// Import Config and CompletionType
 use rustyline::{Config, CompletionType, Editor};
 
 pub fn start() {
-    // Build a custom config specifying List completion, just like your final target!
     let config = Config::builder()
         .completion_type(CompletionType::List)
         .build();
 
-    // Initialize rustyline with our config
     let mut rl = Editor::<ChronosHelper, DefaultHistory>::with_config(config)
         .expect("Failed to initialize readline");
 

@@ -52,21 +52,37 @@ fn get_command_completions(prefix: &str) -> Vec<String> {
     sorted_matches
 }
 
-// Simplified filename completion matching your final architecture style
+// Updated to handle nested directory paths
 pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
     let mut matches = Vec::new();
 
-    // For this stage, we only read the current directory (".")
-    if let Ok(entries) = fs::read_dir(".") {
+    // Split the search_word into a directory to read and a prefix to match
+    let (dir_path, file_prefix, display_dir) = if let Some(last_slash) = search_word.rfind('/') {
+        // e.g., for "path/to/f": dir is "path/to/", prefix is "f"
+        let dir = &search_word[..=last_slash];
+        let prefix = &search_word[last_slash + 1..];
+
+        // We pass 'dir' to fs::read_dir, and we prepend 'display_dir' to the final match
+        (dir, prefix, dir)
+    } else {
+        // No slashes? Look in the current directory (".") and prepend nothing ("")
+        (".", search_word, "")
+    };
+
+    // Read the target directory
+    if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
-                if file_name.starts_with(search_word) {
-                    matches.push(file_name);
+                if file_name.starts_with(file_prefix) {
+                    // Recombine the path so rustyline replaces the entire word correctly!
+                    let full_match = format!("{}{}", display_dir, file_name);
+                    matches.push(full_match);
                 }
             }
         }
     }
 
+    // Sort alphabetically for standard Readline behavior
     matches.sort();
     matches
 }
@@ -86,13 +102,10 @@ impl Completer for ChronosHelper {
         let prefix = &line[..pos];
         let mut pairs = Vec::new();
 
-        // Find where the current word starts (either after the last space, or index 0)
         let start_idx = prefix.rfind(' ').map(|i| i + 1).unwrap_or(0);
         let search_word = &prefix[start_idx..];
 
-        // Decide which completion list to fetch based on if we've typed a space
         if !prefix.contains(' ') {
-            // We are completing the command itself
             let completions = get_command_completions(search_word);
 
             if completions.len() == 1 {
@@ -118,22 +131,17 @@ impl Completer for ChronosHelper {
                 }
             }
         } else {
-            // We have a space, so we are completing arguments (filenames)
             let completions = autocomplete_filename(search_word);
 
-            // For this specific stage, we only need to handle single matches
             if completions.len() == 1 {
                 let comp = &completions[0];
                 pairs.push(Pair {
                     display: comp.clone(),
-                    // Add the trailing space exactly as requested
                     replacement: format!("{} ", comp),
                 });
             }
         }
 
-        // Return start_idx instead of 0 so rustyline only replaces the current word,
-        // preserving the command and previous arguments!
         Ok((start_idx, pairs))
     }
 }

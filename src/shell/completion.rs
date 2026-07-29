@@ -52,37 +52,36 @@ fn get_command_completions(prefix: &str) -> Vec<String> {
     sorted_matches
 }
 
-// Updated to handle nested directory paths
 pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
     let mut matches = Vec::new();
 
-    // Split the search_word into a directory to read and a prefix to match
     let (dir_path, file_prefix, display_dir) = if let Some(last_slash) = search_word.rfind('/') {
-        // e.g., for "path/to/f": dir is "path/to/", prefix is "f"
         let dir = &search_word[..=last_slash];
         let prefix = &search_word[last_slash + 1..];
-
-        // We pass 'dir' to fs::read_dir, and we prepend 'display_dir' to the final match
         (dir, prefix, dir)
     } else {
-        // No slashes? Look in the current directory (".") and prepend nothing ("")
         (".", search_word, "")
     };
 
-    // Read the target directory
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
                 if file_name.starts_with(file_prefix) {
-                    // Recombine the path so rustyline replaces the entire word correctly!
-                    let full_match = format!("{}{}", display_dir, file_name);
+                    let mut full_match = format!("{}{}", display_dir, file_name);
+
+                    // Check if the entry is a directory and append the slash!
+                    if let Ok(file_type) = entry.file_type() {
+                        if file_type.is_dir() {
+                            full_match.push('/');
+                        }
+                    }
+
                     matches.push(full_match);
                 }
             }
         }
     }
 
-    // Sort alphabetically for standard Readline behavior
     matches.sort();
     matches
 }
@@ -105,40 +104,45 @@ impl Completer for ChronosHelper {
         let start_idx = prefix.rfind(' ').map(|i| i + 1).unwrap_or(0);
         let search_word = &prefix[start_idx..];
 
-        if !prefix.contains(' ') {
-            let completions = get_command_completions(search_word);
-
-            if completions.len() == 1 {
-                let comp = &completions[0];
-                pairs.push(Pair {
-                    display: comp.clone(),
-                    replacement: format!("{} ", comp),
-                });
-            } else if completions.len() > 1 {
-                let lcp = longest_common_prefix(&completions);
-                if lcp.len() > search_word.len() {
-                    pairs.push(Pair {
-                        display: lcp.clone(),
-                        replacement: lcp,
-                    });
-                } else {
-                    for comp in completions {
-                        pairs.push(Pair {
-                            display: comp.clone(),
-                            replacement: comp,
-                        });
-                    }
-                }
-            }
+        // Fetch the list based on context, then apply the exact same rules to both!
+        let completions = if !prefix.contains(' ') {
+            get_command_completions(search_word)
         } else {
-            let completions = autocomplete_filename(search_word);
+            autocomplete_filename(search_word)
+        };
 
-            if completions.len() == 1 {
-                let comp = &completions[0];
+        // Notice how our LCP and spacing logic applies perfectly to both modes!
+        if completions.len() == 1 {
+            let comp = &completions[0];
+
+            // If it's a directory (ends with '/'), do NOT add a space.
+            // If it's a file, add the trailing space.
+            let replacement_str = if comp.ends_with('/') {
+                comp.clone()
+            } else {
+                format!("{} ", comp)
+            };
+
+            pairs.push(Pair {
+                display: comp.clone(),
+                replacement: replacement_str,
+            });
+
+        } else if completions.len() > 1 {
+            let lcp = longest_common_prefix(&completions);
+
+            if lcp.len() > search_word.len() {
                 pairs.push(Pair {
-                    display: comp.clone(),
-                    replacement: format!("{} ", comp),
+                    display: lcp.clone(),
+                    replacement: lcp,
                 });
+            } else {
+                for comp in completions {
+                    pairs.push(Pair {
+                        display: comp.clone(),
+                        replacement: comp,
+                    });
+                }
             }
         }
 

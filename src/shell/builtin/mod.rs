@@ -1,10 +1,15 @@
 use std::env;
+use std::sync::{Mutex, OnceLock};
+use std::collections::HashMap;
 use crate::parser::ast::Redirect;
+use std::io::Write;
+use std::fs::{File, OpenOptions};
 
 pub mod cd;
 pub mod echo;
 pub mod pwd;
 pub mod type_cmd;
+pub mod complete; // Expose the complete module
 
 pub enum BuiltinStatus {
     Handled,
@@ -12,7 +17,31 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd"];
+// Added "complete" so your `type` command recognizes it immediately
+pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete"];
+
+// A thread-safe global registry to map commands to their completion scripts
+pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// A helper function to print strings while respecting user redirections (>, >>)
+pub fn print_output(output: &str, stdout: &Redirect) {
+    match stdout {
+        Redirect::None => print!("{}", output),
+        Redirect::Overwrite(path) => {
+            if let Ok(mut f) = File::create(path) {
+                let _ = f.write_all(output.as_bytes());
+            }
+        }
+        Redirect::Append(path) => {
+            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
+                let _ = f.write_all(output.as_bytes());
+            }
+        }
+    }
+}
 
 pub fn find_executable(cmd: &str) -> Option<String> {
     let path_var = env::var("PATH").unwrap_or_default();
@@ -48,6 +77,7 @@ pub fn execute(command: &str, args: &[&str], stdout: &Redirect) -> BuiltinStatus
         "type" => type_cmd::execute(args),
         "pwd" => pwd::execute(args),
         "cd" => cd::execute(args),
+        "complete" => complete::execute(args, stdout), // Route the complete command
         _ => BuiltinStatus::NotHandled,
     }
 }

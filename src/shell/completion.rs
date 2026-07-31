@@ -25,7 +25,7 @@ pub fn longest_common_prefix(strings: &[String]) -> String {
 
 fn get_command_completions(prefix: &str) -> Vec<String> {
     let mut matches = HashSet::new();
-    let builtins = ["echo", "exit", "type", "pwd", "cd"];
+    let builtins = ["echo", "exit", "type", "pwd", "cd", "complete"];
 
     for b in builtins {
         if b.starts_with(prefix) {
@@ -69,7 +69,6 @@ pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
                 if file_name.starts_with(file_prefix) {
                     let mut full_match = format!("{}{}", display_dir, file_name);
 
-                    // Check if the entry is a directory and append the slash!
                     if let Ok(file_type) = entry.file_type() {
                         if file_type.is_dir() {
                             full_match.push('/');
@@ -104,19 +103,15 @@ impl Completer for ChronosHelper {
         let start_idx = prefix.rfind(' ').map(|i| i + 1).unwrap_or(0);
         let search_word = &prefix[start_idx..];
 
-        // Fetch the list based on context, then apply the exact same rules to both!
         let completions = if !prefix.contains(' ') {
             get_command_completions(search_word)
         } else {
             autocomplete_filename(search_word)
         };
 
-        // Notice how our LCP and spacing logic applies perfectly to both modes!
         if completions.len() == 1 {
             let comp = &completions[0];
 
-            // If it's a directory (ends with '/'), do NOT add a space.
-            // If it's a file, add the trailing space.
             let replacement_str = if comp.ends_with('/') {
                 comp.clone()
             } else {

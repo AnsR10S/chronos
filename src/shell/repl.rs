@@ -1,5 +1,3 @@
-use crate::lexer::lexer::tokenize;
-use crate::executor::single;
 use crate::shell::completion::ChronosHelper;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
@@ -16,7 +14,6 @@ pub fn start() {
     rl.set_helper(Some(ChronosHelper::default()));
 
     loop {
-        // Check for and reap finished background jobs right before we prompt
         crate::shell::state::jobs::reap_jobs();
 
         let readline = rl.readline("$ ");
@@ -30,13 +27,9 @@ pub fn start() {
                 }
 
                 let _ = rl.add_history_entry(trimmed_input);
-                let tokens = tokenize(trimmed_input);
 
-                if tokens.is_empty() {
-                    continue;
-                }
-
-                if single::execute(tokens) {
+                // Let the orchestrator handle tokenization and routing to pipeline or single
+                if crate::executor::executor::execute_pipeline(trimmed_input) {
                     break;
                 }
             },

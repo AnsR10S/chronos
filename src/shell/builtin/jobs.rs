@@ -5,7 +5,6 @@ pub fn execute(_args: &[&str], stdout: &Redirect) -> BuiltinStatus {
     let mut registry = crate::shell::state::jobs::jobs_registry().lock().unwrap();
     let total_jobs = registry.len();
 
-    // Iterate and update statuses
     for (index, job) in registry.iter_mut().enumerate() {
         if let Ok(Some(_status)) = job.child.try_wait() {
             job.status = "Done".to_string();
@@ -30,7 +29,6 @@ pub fn execute(_args: &[&str], stdout: &Redirect) -> BuiltinStatus {
         print_output(&output, stdout);
     }
 
-    // Clean up finished jobs
     registry.retain(|job| job.status != "Done");
     BuiltinStatus::Handled
 }

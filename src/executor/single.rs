@@ -5,12 +5,38 @@ use crate::executor::process;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
+// Checks if a command is a builtin for pipeline routing
+pub fn is_builtin(cmd: &str) -> bool {
+    ["echo", "exit", "type", "pwd", "cd", "complete", "jobs", "history", "declare"].contains(&cmd)
+}
+
+// Executes a builtin but returns its output as a String instead of printing it to the terminal
+pub fn capture_builtin(command: &str, args: &[String]) -> String {
+    match command {
+        "echo" => format!("{}\n", args.join(" ")),
+        "pwd" => std::env::current_dir().ok().map(|d| format!("{}\n", d.display())).unwrap_or_default(),
+        "type" => {
+            if let Some(target) = args.get(0) {
+                if is_builtin(target) {
+                    format!("{} is a shell builtin\n", target)
+                } else if let Some(path) = crate::shell::builtin::find_executable(target) {
+                    format!("{} is {}\n", target, path)
+                } else {
+                    format!("{}: not found\n", target)
+                }
+            } else {
+                String::new()
+            }
+        }
+        _ => String::new(),
+    }
+}
+
 pub fn execute(tokens: Vec<String>) -> bool {
     if let Some(mut parsed_cmd) = parser::parse(tokens) {
 
         let mut is_background = false;
 
-        // Handle background process flag
         if parsed_cmd.args.last().map(|s| s.as_str()) == Some("&") {
             parsed_cmd.args.pop();
             is_background = true;
@@ -36,7 +62,6 @@ pub fn execute(tokens: Vec<String>) -> bool {
             BuiltinStatus::NotHandled => {
 
                 if find_executable(&parsed_cmd.name).is_some() {
-                    // Route to the correct runner based on the background flag
                     if is_background {
                         process::run_background(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
                     } else {

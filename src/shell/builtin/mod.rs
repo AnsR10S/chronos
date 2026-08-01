@@ -10,7 +10,7 @@ pub mod echo;
 pub mod pwd;
 pub mod type_cmd;
 pub mod complete;
-pub mod jobs; // Added the jobs module
+pub mod jobs;
 
 pub enum BuiltinStatus {
     Handled,
@@ -18,7 +18,6 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-// Added "jobs" to the BUILTINS array
 pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs"];
 
 pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
@@ -77,7 +76,6 @@ pub fn execute(command: &str, args: &[&str], stdout: &Redirect) -> BuiltinStatus
         "pwd" => pwd::execute(args),
         "cd" => cd::execute(args),
         "complete" => complete::execute(args, stdout),
-        // Route the jobs command
         "jobs" => jobs::execute(args, stdout),
         _ => BuiltinStatus::NotHandled,
     }

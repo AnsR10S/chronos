@@ -35,7 +35,6 @@ pub fn run_external(command: &str, args: &[String], stdout: &Redirect, stderr: &
     }
 }
 
-// Spawns the process and immediately returns control to the shell!
 pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) {
     let mut cmd = StdCommand::new(command);
     cmd.args(args);
@@ -64,7 +63,6 @@ pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr:
         }
     }
 
-    // we spawn but we DO NOT call wait()
     match cmd.spawn() {
         Ok(child) => {
             let pid = child.id();
@@ -76,7 +74,6 @@ pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr:
             }
             full_cmd.push_str(" &");
 
-            // Register it in our state manager
             let job_id = crate::shell::state::jobs::add_job(child, full_cmd);
             println!("[{}] {}", job_id, pid);
         }

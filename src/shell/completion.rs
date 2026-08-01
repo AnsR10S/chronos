@@ -1,12 +1,4 @@
-use rustyline::completion::{Completer, Pair};
-use rustyline::highlight::Highlighter;
-use rustyline::hint::Hinter;
-use rustyline::validate::Validator;
-use rustyline::{Context, Helper};
-use std::env;
 use std::fs;
-use std::collections::HashSet;
-use std::process::Command;
 
 pub fn longest_common_prefix(strings: &[String]) -> String {
     if strings.is_empty() {
@@ -24,38 +16,10 @@ pub fn longest_common_prefix(strings: &[String]) -> String {
     prefix
 }
 
-fn get_command_completions(prefix: &str) -> Vec<String> {
-    let mut matches = HashSet::new();
-    let builtins = ["echo", "exit", "type", "pwd", "cd", "complete"];
-
-    for b in builtins {
-        if b.starts_with(prefix) {
-            matches.insert(b.to_string());
-        }
-    }
-
-    if let Ok(path_var) = env::var("PATH") {
-        for path in env::split_paths(&path_var) {
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    if let Ok(file_name) = entry.file_name().into_string() {
-                        if file_name.starts_with(prefix) {
-                            matches.insert(file_name);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let mut sorted_matches: Vec<String> = matches.into_iter().collect();
-    sorted_matches.sort();
-    sorted_matches
-}
-
 pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
     let mut matches = Vec::new();
 
+    // Split the search word into a directory to read and a prefix to match
     let (dir_path, file_prefix, display_dir) = if let Some(last_slash) = search_word.rfind('/') {
         let dir = &search_word[..=last_slash];
         let prefix = &search_word[last_slash + 1..];
@@ -64,143 +28,26 @@ pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
         (".", search_word, "")
     };
 
+    // Read the target directory
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
                 if file_name.starts_with(file_prefix) {
+                    // Recombine the path so rustyline replaces the entire word correctly!
                     let mut full_match = format!("{}{}", display_dir, file_name);
 
                     if let Ok(file_type) = entry.file_type() {
                         if file_type.is_dir() {
-                            full_match.push('/');
+                            full_match.push('/'); // Append the slash for directories!
                         }
                     }
-
                     matches.push(full_match);
                 }
             }
         }
     }
 
+    // Sort alphabetically for standard Readline behavior
     matches.sort();
     matches
 }
-
-fn run_completer_script(line: &str) -> Option<Vec<String>> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let cmd = parts[0];
-
-    let script_path = {
-        let registry = crate::shell::builtin::completion_registry().lock().unwrap();
-        registry.get(cmd).cloned()
-    };
-
-    let script = script_path?;
-
-    let current_word = if line.ends_with(' ') { "" } else { parts.last().unwrap_or(&"") };
-    let previous_word = if parts.len() >= 2 {
-        if line.ends_with(' ') {
-            parts.last().unwrap()
-        } else {
-            parts[parts.len() - 2]
-        }
-    } else {
-        ""
-    };
-
-    if let Ok(output) = Command::new(&script)
-        .arg(cmd)
-        .arg(current_word)
-        .arg(previous_word)
-        .env("COMP_LINE", line)
-        .env("COMP_POINT", line.len().to_string())
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut matches = Vec::new();
-
-        for s in stdout.lines() {
-            let trimmed = s.trim();
-            if !trimmed.is_empty() {
-                matches.push(trimmed.to_string());
-            }
-        }
-
-        return Some(matches);
-    }
-
-    None
-}
-
-#[derive(Default)]
-pub struct ChronosHelper;
-
-impl Completer for ChronosHelper {
-    type Candidate = Pair;
-
-    fn complete(
-        &self,
-        line: &str,
-        pos: usize,
-        _ctx: &Context<'_>,
-    ) -> rustyline::Result<(usize, Vec<Pair>)> {
-        let prefix = &line[..pos];
-        let mut pairs = Vec::new();
-
-        let start_idx = prefix.rfind(' ').map(|i| i + 1).unwrap_or(0);
-        let search_word = &prefix[start_idx..];
-
-        let completions = if !prefix.contains(' ') {
-            get_command_completions(search_word)
-        } else {
-            if let Some(script_completions) = run_completer_script(prefix) {
-                script_completions
-            } else {
-                autocomplete_filename(search_word)
-            }
-        };
-
-        if completions.len() == 1 {
-            let comp = &completions[0];
-
-            let replacement_str = if comp.ends_with('/') {
-                comp.clone()
-            } else {
-                format!("{} ", comp)
-            };
-
-            pairs.push(Pair {
-                display: comp.clone(),
-                replacement: replacement_str,
-            });
-
-        } else if completions.len() > 1 {
-            let lcp = longest_common_prefix(&completions);
-
-            if lcp.len() > search_word.len() {
-                pairs.push(Pair {
-                    display: lcp.clone(),
-                    replacement: lcp,
-                });
-            } else {
-                for comp in completions {
-                    pairs.push(Pair {
-                        display: comp.clone(),
-                        replacement: comp,
-                    });
-                }
-            }
-        }
-
-        Ok((start_idx, pairs))
-    }
-}
-
-impl Helper for ChronosHelper {}
-impl Hinter for ChronosHelper { type Hint = String; }
-impl Highlighter for ChronosHelper {}
-impl Validator for ChronosHelper {}

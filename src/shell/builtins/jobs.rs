@@ -1,7 +1,7 @@
 use crate::parser::ast::Redirect;
-use crate::shell::builtin::{print_output, BuiltinStatus};
+use crate::shell::builtins::{print_output, BuiltinStatus};
 
-pub fn execute(_args: &[&str], stdout: &Redirect) -> BuiltinStatus {
+pub fn execute(_args: &[String], stdout: &Redirect) -> BuiltinStatus {
     let mut registry = crate::shell::state::jobs::jobs_registry().lock().unwrap();
     let total_jobs = registry.len();
 
@@ -18,14 +18,14 @@ pub fn execute(_args: &[&str], stdout: &Redirect) -> BuiltinStatus {
             " "
         };
 
-        let status_padded = format!("{:<24}", job.status);
         let display_cmd = if job.status == "Done" {
             job.command.trim_end_matches(" &")
         } else {
             &job.command
         };
 
-        let output = format!("[{}]{} {}{}\n", job.id, marker, status_padded, display_cmd);
+        // We now output `[1]+  Running` instead of `[1] +Running`
+        let output = format!("[{}]{}  {:<24}{}\n", job.id, marker, job.status, display_cmd);
         print_output(&output, stdout);
     }
 

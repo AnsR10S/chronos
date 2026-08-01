@@ -30,9 +30,8 @@ pub fn run_external(command: &str, args: &[String], stdout: &Redirect, stderr: &
         }
     }
 
-    if let Ok(mut child) = cmd.spawn() {
-        let _ = child.wait();
-    }
+    let mut child = cmd.spawn().expect("failed to execute process");
+    child.wait().expect("process failed to wait");
 }
 
 pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) {

@@ -1,5 +1,5 @@
 use crate::parser::parser;
-use crate::shell::builtin;
+use crate::shell::builtins;
 use crate::executor::single::{is_builtin, capture_builtin};
 use std::io::Write;
 use std::process::{Command, Stdio, Child};
@@ -21,8 +21,8 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
                     pending_builtin_out = Some(capture_builtin(&parsed_cmd.name, &parsed_cmd.args));
                     previous_stdout = None;
                 } else {
-                    let args_refs: Vec<&str> = parsed_cmd.args.iter().map(|s| s.as_str()).collect();
-                    let _ = builtin::execute(&parsed_cmd.name, &args_refs, &parsed_cmd.stdout);
+                    // Fixed the typo and passing args directly
+                    let _ = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
                 }
             } else {
                 let mut cmd = Command::new(&parsed_cmd.name);

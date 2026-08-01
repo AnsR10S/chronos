@@ -16,6 +16,9 @@ pub fn start() {
     rl.set_helper(Some(ChronosHelper::default()));
 
     loop {
+        // Check for and reap finished background jobs right before we prompt
+        crate::shell::state::jobs::reap_jobs();
+
         let readline = rl.readline("$ ");
 
         match readline {

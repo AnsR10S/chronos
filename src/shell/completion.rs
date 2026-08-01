@@ -6,7 +6,7 @@ use rustyline::{Context, Helper};
 use std::env;
 use std::fs;
 use std::collections::HashSet;
-use std::process::Command; // Required to run external completer scripts
+use std::process::Command;
 
 pub fn longest_common_prefix(strings: &[String]) -> String {
     if strings.is_empty() {
@@ -86,26 +86,21 @@ pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
     matches
 }
 
-// This function handles everything from finding the script to executing it
 fn run_completer_script(line: &str) -> Option<Vec<String>> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.is_empty() {
         return None;
     }
 
-    // The target command is always the first word
     let cmd = parts[0];
 
-    // Check the registry
     let script_path = {
         let registry = crate::shell::builtin::completion_registry().lock().unwrap();
         registry.get(cmd).cloned()
     };
 
-    // If no script is registered, return None so we can fallback to filenames
     let script = script_path?;
 
-    // Prepare the arguments (Solves the "Passing command-line arguments" stage)
     let current_word = if line.ends_with(' ') { "" } else { parts.last().unwrap_or(&"") };
     let previous_word = if parts.len() >= 2 {
         if line.ends_with(' ') {
@@ -117,7 +112,6 @@ fn run_completer_script(line: &str) -> Option<Vec<String>> {
         ""
     };
 
-    // Execute the script with arguments & env vars (Solves "Passing environment variables")
     if let Ok(output) = Command::new(&script)
         .arg(cmd)
         .arg(current_word)
@@ -129,7 +123,6 @@ fn run_completer_script(line: &str) -> Option<Vec<String>> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut matches = Vec::new();
 
-        // Split by line to support multiple candidates natively
         for s in stdout.lines() {
             let trimmed = s.trim();
             if !trimmed.is_empty() {
@@ -137,8 +130,6 @@ fn run_completer_script(line: &str) -> Option<Vec<String>> {
             }
         }
 
-        // Return Some even if empty, meaning "we handled it, but found 0 matches"
-        // This solves the "Handling no completions" stage!
         return Some(matches);
     }
 
@@ -163,7 +154,6 @@ impl Completer for ChronosHelper {
         let start_idx = prefix.rfind(' ').map(|i| i + 1).unwrap_or(0);
         let search_word = &prefix[start_idx..];
 
-        // Intercept the pipeline! Try script first, fallback to filename
         let completions = if !prefix.contains(' ') {
             get_command_completions(search_word)
         } else {
@@ -174,7 +164,6 @@ impl Completer for ChronosHelper {
             }
         };
 
-        // Our LCP and spacing logic now applies perfectly to the scripts too
         if completions.len() == 1 {
             let comp = &completions[0];
 

@@ -5,12 +5,10 @@ use crate::executor::process;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
-// Checks if a command is a builtin for pipeline routing
 pub fn is_builtin(cmd: &str) -> bool {
     ["echo", "exit", "type", "pwd", "cd", "complete", "jobs", "history", "declare"].contains(&cmd)
 }
 
-// Executes a builtin but returns its output as a String instead of printing it to the terminal
 pub fn capture_builtin(command: &str, args: &[String]) -> String {
     match command {
         "echo" => format!("{}\n", args.join(" ")),
@@ -27,6 +25,24 @@ pub fn capture_builtin(command: &str, args: &[String]) -> String {
             } else {
                 String::new()
             }
+        }
+        "history" => { // Capture history output for pipelines
+            let registry = crate::shell::state::history::history_registry().lock().unwrap();
+            let total = registry.len();
+            let mut limit = total;
+
+            if let Some(arg) = args.get(0) {
+                if let Ok(n) = arg.parse::<usize>() {
+                    limit = n;
+                }
+            }
+
+            let start_idx = total.saturating_sub(limit);
+            let mut out = String::new();
+            for (i, cmd) in registry.iter().enumerate().skip(start_idx) {
+                out.push_str(&format!("{:>5} {}\n", i + 1, cmd));
+            }
+            out
         }
         _ => String::new(),
     }

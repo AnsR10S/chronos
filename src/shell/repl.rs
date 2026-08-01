@@ -13,6 +13,12 @@ pub fn start() {
 
     rl.set_helper(Some(ChronosHelper::default()));
 
+    // Check for HISTFILE and load it on startup
+    if let Ok(histfile) = std::env::var("HISTFILE") {
+        crate::shell::state::history::append_from_file(&histfile);
+        let _ = rl.load_history(&histfile);
+    }
+
     loop {
         crate::shell::state::jobs::reap_jobs();
 
@@ -26,9 +32,10 @@ pub fn start() {
                     continue;
                 }
 
+                // Add to both Rustyline's internal memory and our custom state
                 let _ = rl.add_history_entry(trimmed_input);
+                crate::shell::state::history::add_history(trimmed_input.to_string());
 
-                // Let the orchestrator handle tokenization and routing to pipeline or single
                 if crate::executor::executor::execute_pipeline(trimmed_input) {
                     break;
                 }
@@ -41,5 +48,10 @@ pub fn start() {
                 break;
             }
         }
+    }
+
+    // The shell has broken out of the loop and is about to exit. Flush to HISTFILE
+    if let Ok(histfile) = std::env::var("HISTFILE") {
+        crate::shell::state::history::append_to_file(&histfile);
     }
 }

@@ -11,6 +11,7 @@ pub mod pwd;
 pub mod type_cmd;
 pub mod complete;
 pub mod jobs;
+pub mod history; // Added history module
 
 pub enum BuiltinStatus {
     Handled,
@@ -18,7 +19,8 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs"];
+// Added "history" to the BUILTINS array
+pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history"];
 
 pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -77,6 +79,7 @@ pub fn execute(command: &str, args: &[&str], stdout: &Redirect) -> BuiltinStatus
         "cd" => cd::execute(args),
         "complete" => complete::execute(args, stdout),
         "jobs" => jobs::execute(args, stdout),
+        "history" => history::execute(args, stdout), // Route the history command
         _ => BuiltinStatus::NotHandled,
     }
 }

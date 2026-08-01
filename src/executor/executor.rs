@@ -6,7 +6,6 @@ pub fn execute_pipeline(input: &str) -> bool {
     let mut pipe_chunks: Vec<Vec<String>> = Vec::new();
     let mut current_chunk = Vec::new();
 
-    // Split the tokenized input into chunks separated by the pipe operator
     for token in tokens {
         if token == "|" {
             pipe_chunks.push(current_chunk);
@@ -17,7 +16,6 @@ pub fn execute_pipeline(input: &str) -> bool {
     }
     pipe_chunks.push(current_chunk);
 
-    // Route to the appropriate executor based on chunk count
     if pipe_chunks.len() > 1 {
         pipeline::execute(pipe_chunks)
     } else {

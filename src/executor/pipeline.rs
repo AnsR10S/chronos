@@ -16,10 +16,8 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
 
         if let Some(parsed_cmd) = parser::parse(chunk) {
 
-            // Handle built-ins inside a pipeline
             if is_builtin(&parsed_cmd.name) {
                 if !is_last {
-                    // Capture the builtin output so it can be passed as stdin to the next command
                     pending_builtin_out = Some(capture_builtin(&parsed_cmd.name, &parsed_cmd.args));
                     previous_stdout = None;
                 } else {
@@ -30,16 +28,14 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
                 let mut cmd = Command::new(&parsed_cmd.name);
                 cmd.args(&parsed_cmd.args);
 
-                // Connect stdin to the previous command's stdout
                 if let Some(prev_out) = previous_stdout.take() {
                     cmd.stdin(Stdio::from(prev_out));
                 } else if pending_builtin_out.is_some() {
-                    cmd.stdin(Stdio::piped()); // We will manually write the pending string to this
+                    cmd.stdin(Stdio::piped());
                 } else {
                     cmd.stdin(Stdio::inherit());
                 }
 
-                // Connect stdout to the next command's stdin (unless it's the last command)
                 if is_last {
                     cmd.stdout(Stdio::inherit());
                 } else {
@@ -47,7 +43,6 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
                 }
 
                 if let Ok(mut child) = cmd.spawn() {
-                    // Write any captured builtin string into the stdin of this external process
                     if let Some(text) = pending_builtin_out.take() {
                         if let Some(mut stdin) = child.stdin.take() {
                             let _ = stdin.write_all(text.as_bytes());
@@ -66,7 +61,6 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
         }
     }
 
-    // Wait for all processes in the pipeline to finish execution
     for mut child in children {
         let _ = child.wait();
     }

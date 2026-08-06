@@ -2,7 +2,6 @@ use crate::parser::ast::Redirect;
 use crate::shell::builtins::{completion_registry, print_output, BuiltinStatus};
 
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
-    // Changed to capital -C to properly capture the registration command
     if args.len() >= 3 && args[0] == "-C" {
         let script_path = &args[1];
         let target_cmd = &args[2];

@@ -24,7 +24,6 @@ pub fn execute(_args: &[String], stdout: &Redirect) -> BuiltinStatus {
             &job.command
         };
 
-        // We now output `[1]+  Running` instead of `[1] +Running`
         let output = format!("[{}]{}  {:<24}{}\n", job.id, marker, job.status, display_cmd);
         print_output(&output, stdout);
     }

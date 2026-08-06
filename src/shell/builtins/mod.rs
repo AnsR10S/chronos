@@ -12,7 +12,7 @@ pub mod type_cmd;
 pub mod complete;
 pub mod jobs;
 pub mod history;
-pub mod declare; // Added declare module
+pub mod declare;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -23,7 +23,6 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-// Added "declare" to the BUILTINS array
 pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history", "declare"];
 
 pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
@@ -35,7 +34,7 @@ pub fn print_output(output: &str, stdout: &Redirect) {
     match stdout {
         Redirect::None => {
             print!("{}", output);
-            let _ = std::io::stdout().flush(); // Forces the buffer to write immediately
+            let _ = std::io::stdout().flush();
         }
         Redirect::Overwrite(path) => {
             if let Ok(mut f) = File::create(path) {
@@ -74,7 +73,6 @@ pub fn find_executable(cmd: &str) -> Option<String> {
     None
 }
 
-// Autocomplete logic shifted into the builtins domain
 pub fn autocomplete(prefix: &str) -> Vec<String> {
     let mut matches = HashSet::new();
 
@@ -117,7 +115,6 @@ pub fn autocomplete(prefix: &str) -> Vec<String> {
     matches_vec
 }
 
-// Registry lookup helper function
 pub fn get_completer(cmd: &str) -> Option<String> {
     let registry = completion_registry().lock().unwrap();
     registry.get(cmd).cloned()

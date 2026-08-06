@@ -21,7 +21,6 @@ pub fn execute(pipe_chunks: Vec<Vec<String>>) -> bool {
                     pending_builtin_out = Some(capture_builtin(&parsed_cmd.name, &parsed_cmd.args));
                     previous_stdout = None;
                 } else {
-                    // Fixed the typo and passing args directly
                     let _ = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
                 }
             } else {

@@ -1,13 +1,15 @@
 use crate::parser::parser;
 use crate::parser::ast::Redirect;
-use crate::shell::builtins::{self, BuiltinStatus};
+use crate::shell::builtins::{self, BuiltinStatus, BUILTINS}; // ADDED BUILTINS import
 use crate::executor::process;
-use crate::expansion::expand::expand_args; // Import expansion logic
+use crate::executor::expand::expand_args; // UPDATED path to executor::expand
+use crate::chronos::risk::analyzer::{analyze_command, RiskLevel}; // Import the Risk Engine
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
 pub fn is_builtin(cmd: &str) -> bool {
-    ["echo", "exit", "type", "pwd", "cd", "complete", "jobs", "history"].contains(&cmd)
+    // Now uses the array from mod.rs as the single source of truth!
+    BUILTINS.contains(&cmd)
 }
 
 pub fn capture_builtin(command: &str, args: &[String]) -> String {
@@ -61,6 +63,22 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         // Expand the arguments before passing them to builtins or external processes
         parsed_cmd.args = expand_args(&parsed_cmd.args);
+
+        let risk = analyze_command(&parsed_cmd.name);
+
+        let risk_label = match risk {
+            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",                   // Green
+            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m", // Yellow
+            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",        // Red
+        };
+
+        println!("[CHRONOS] Assessed Risk: {}", risk_label);
+
+        match &parsed_cmd.stdout {
+            Redirect::None => {}
+            Redirect::Overwrite(path) => { let _ = File::create(path); }
+            Redirect::Append(path) => { let _ = OpenOptions::new().create(true).append(true).open(path); }
+        }
 
         match &parsed_cmd.stderr {
             Redirect::None => {}

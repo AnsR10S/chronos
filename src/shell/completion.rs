@@ -19,7 +19,6 @@ pub fn longest_common_prefix(strings: &[String]) -> String {
 pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
     let mut matches = Vec::new();
 
-    // Split the search word into a directory to read and a prefix to match
     let (dir_path, file_prefix, display_dir) = if let Some(last_slash) = search_word.rfind('/') {
         let dir = &search_word[..=last_slash];
         let prefix = &search_word[last_slash + 1..];
@@ -28,17 +27,15 @@ pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
         (".", search_word, "")
     };
 
-    // Read the target directory
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
                 if file_name.starts_with(file_prefix) {
-                    // Recombine the path so rustyline replaces the entire word correctly!
                     let mut full_match = format!("{}{}", display_dir, file_name);
 
                     if let Ok(file_type) = entry.file_type() {
                         if file_type.is_dir() {
-                            full_match.push('/'); // Append the slash for directories!
+                            full_match.push('/');
                         }
                     }
                     matches.push(full_match);
@@ -47,7 +44,6 @@ pub fn autocomplete_filename(search_word: &str) -> Vec<String> {
         }
     }
 
-    // Sort alphabetically for standard Readline behavior
     matches.sort();
     matches
 }

@@ -2,7 +2,6 @@ use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
 
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
-    // Intercept history flags
     if let Some(flag) = args.get(0) {
         if flag == "-r" {
             if let Some(path) = args.get(1) {

@@ -1,14 +1,13 @@
 use crate::parser::parser;
 use crate::parser::ast::Redirect;
-use crate::shell::builtins::{self, BuiltinStatus, BUILTINS}; // ADDED BUILTINS import
+use crate::shell::builtins::{self, BuiltinStatus, BUILTINS};
 use crate::executor::process;
-use crate::executor::expand::expand_args; // UPDATED path to executor::expand
-use crate::chronos::risk::analyzer::{analyze_command, RiskLevel}; // Import the Risk Engine
+use crate::executor::expand::expand_args;
+use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
 pub fn is_builtin(cmd: &str) -> bool {
-    // Now uses the array from mod.rs as the single source of truth!
     BUILTINS.contains(&cmd)
 }
 
@@ -61,18 +60,24 @@ pub fn execute(chunk: Vec<String>) -> bool {
             is_background = true;
         }
 
-        // Expand the arguments before passing them to builtins or external processes
         parsed_cmd.args = expand_args(&parsed_cmd.args);
 
-        let risk = analyze_command(&parsed_cmd.name);
+        // We now pass the entire `parsed_cmd` AST object!
+        let assessment = analyze_command(&parsed_cmd);
 
-        let risk_label = match risk {
+        let risk_label = match assessment.level {
             RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",                   // Green
             RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m", // Yellow
             RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",        // Red
+            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",              // Magenta
         };
 
-        println!("[CHRONOS] Assessed Risk: {}", risk_label);
+        // Print the new score and confidence metrics
+        println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
+                 risk_label,
+                 assessment.score,
+                 assessment.confidence * 100.0);
+
 
         match &parsed_cmd.stdout {
             Redirect::None => {}
@@ -86,7 +91,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
             Redirect::Append(path) => { let _ = OpenOptions::new().create(true).append(true).open(path); }
         }
 
-        // Pass parsed_cmd.args directly (as &[String])
         match builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout) {
             BuiltinStatus::Exit => return true,
             BuiltinStatus::Handled => return false,

@@ -4,6 +4,7 @@ use crate::shell::builtins::{self, BuiltinStatus, BUILTINS};
 use crate::executor::process;
 use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
+use crate::chronos::state::tracker::track_targets; // Import the filesystem tracker
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
@@ -62,22 +63,37 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         parsed_cmd.args = expand_args(&parsed_cmd.args);
 
-        // We now pass the entire `parsed_cmd` AST object!
         let assessment = analyze_command(&parsed_cmd);
 
         let risk_label = match assessment.level {
-            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",                   // Green
-            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m", // Yellow
-            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",        // Red
-            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",              // Magenta
+            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",
+            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m",
+            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",
+            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
-        // Print the new score and confidence metrics
         println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
                  risk_label,
                  assessment.score,
                  assessment.confidence * 100.0);
 
+        // If the command alters state, track the filesystem targets before executing
+        if assessment.level == RiskLevel::StateChanging || assessment.level == RiskLevel::Destructive {
+            let targets = track_targets(&parsed_cmd);
+            if !targets.is_empty() {
+                println!("[CHRONOS] Tracking Filesystem Targets:");
+                for target in targets {
+                    let status = if target.exists {
+                        let kind = if target.is_dir { "Directory" } else { "File" };
+                        let perms = if target.readonly { "Read-Only" } else { "Writable" };
+                        format!("Exists ({} - {})", kind, perms)
+                    } else {
+                        "Does Not Exist".to_string()
+                    };
+                    println!("  -> {}: {}", target.path, status);
+                }
+            }
+        }
 
         match &parsed_cmd.stdout {
             Redirect::None => {}

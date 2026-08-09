@@ -55,7 +55,6 @@ pub fn find_executable(cmd: &str) -> Option<String> {
     for path in env::split_paths(&path_var) {
         let executable = path.join(cmd);
 
-        // Standard check (works for Linux, or if user explicitly typed "notepad.exe")
         if executable.is_file() {
             #[cfg(unix)]
             let is_exec = std::fs::metadata(&executable)
@@ -70,7 +69,6 @@ pub fn find_executable(cmd: &str) -> Option<String> {
             }
         }
 
-        // Windows-specific check: if the exact name isn't found, try appending .exe
         #[cfg(windows)]
         {
             let mut exe_with_ext = executable.clone();

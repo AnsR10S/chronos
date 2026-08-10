@@ -6,11 +6,9 @@ use crate::chronos::transaction::snapshot::restore_snapshot;
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     let mut registry = transaction_registry().lock().unwrap();
 
-    // Find the target transaction index
     let mut target_tx_index = None;
 
     if let Some(requested_id) = args.get(0) {
-        // If the user specifies a transaction ID (e.g., `undo tx_12345`)
         for (i, tx) in registry.iter().enumerate().rev() {
             if &tx.id == requested_id {
                 target_tx_index = Some(i);
@@ -18,7 +16,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
         }
     } else {
-        // Otherwise, find the most recent transaction that actually had filesystem targets
         for (i, tx) in registry.iter().enumerate().rev() {
             if tx.status == TransactionStatus::Committed && !tx.targets.is_empty() {
                 target_tx_index = Some(i);
@@ -41,7 +38,7 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         match restore_snapshot(&tx.id, &tx.targets) {
             Ok(_) => {
                 print_output("[CHRONOS] Successfully restored files from snapshot.\n", stdout);
-                registry[idx].status = TransactionStatus::RolledBack; // Update the global registry
+                registry[idx].status = TransactionStatus::RolledBack;
             },
             Err(e) => {
                 print_output(&format!("[CHRONOS] ⚠ Failed to restore snapshot: {}\n", e), stdout);

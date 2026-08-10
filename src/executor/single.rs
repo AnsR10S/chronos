@@ -77,10 +77,16 @@ pub fn execute(chunk: Vec<String>) -> bool {
             RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
-        println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
-                 risk_label,
-                 assessment.score,
-                 assessment.confidence * 100.0);
+        // Check if this is a meta-command that shouldn't enter the ledger
+        let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "transactions" | "exit" | "history");
+
+        // We only print the assessment block for normal commands (keeps output clean when viewing history)
+        if !is_meta_command {
+            println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
+                     risk_label,
+                     assessment.score,
+                     assessment.confidence * 100.0);
+        }
 
         let mut targets = Vec::new();
         if assessment.level == RiskLevel::StateChanging
@@ -88,7 +94,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             || assessment.level == RiskLevel::VeryHigh
         {
             targets = track_targets(&parsed_cmd);
-            if !targets.is_empty() {
+            if !targets.is_empty() && !is_meta_command {
                 println!("[CHRONOS] Tracking Filesystem Targets:");
                 for target in &targets {
                     let status = if target.exists {
@@ -103,27 +109,30 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        // Initialize the Transaction
-        let mut tx = Transaction::new(command_line, assessment.clone(), targets);
-        println!("[CHRONOS] Transaction Created: {}", tx.id);
+        // Only wrap in a transaction if it's not a meta-command
+        let active_tx = if !is_meta_command {
+            let mut tx = Transaction::new(command_line, assessment.clone(), targets);
+            println!("[CHRONOS] Transaction Created: {}", tx.id);
 
-        if assessment.level == RiskLevel::StateChanging
-            || assessment.level == RiskLevel::Destructive
-            || assessment.level == RiskLevel::VeryHigh
-        {
-            println!("[CHRONOS] Securing targets...");
-            if let Err(e) = crate::chronos::transaction::snapshot::create_snapshot(&tx.id, &tx.targets) {
-                eprintln!("[CHRONOS] ⚠ WARNING: Failed to create snapshot: {}", e);
-                tx.transition_to(TransactionStatus::Failed);
-                // For a strict security model, you could `return false;` here to block execution on snapshot failure.
-            } else {
-                tx.transition_to(TransactionStatus::Prepared);
-                println!("[CHRONOS] Snapshot secured successfully.");
+            if assessment.level == RiskLevel::StateChanging
+                || assessment.level == RiskLevel::Destructive
+                || assessment.level == RiskLevel::VeryHigh
+            {
+                println!("[CHRONOS] Securing targets...");
+                if let Err(e) = crate::chronos::transaction::snapshot::create_snapshot(&tx.id, &tx.targets) {
+                    eprintln!("[CHRONOS] ⚠ WARNING: Failed to create snapshot: {}", e);
+                    tx.transition_to(TransactionStatus::Failed);
+                } else {
+                    tx.transition_to(TransactionStatus::Prepared);
+                    println!("[CHRONOS] Snapshot secured successfully.");
+                }
             }
-        }
 
-        // Transition to Executing
-        tx.transition_to(TransactionStatus::Executing);
+            tx.transition_to(TransactionStatus::Executing);
+            Some(tx)
+        } else {
+            None
+        };
 
         match &parsed_cmd.stdout {
             Redirect::None => {}
@@ -137,7 +146,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
             Redirect::Append(path) => { let _ = OpenOptions::new().create(true).append(true).open(path); }
         }
 
-        // Evaluate command
         let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
 
         if status == BuiltinStatus::NotHandled {
@@ -161,12 +169,13 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        // Commit the transaction and save it to the registry
-        tx.transition_to(TransactionStatus::Committed);
-        println!("[CHRONOS] Transaction Committed.");
-        record_transaction(tx);
+        // Only commit the transaction if one was actually created
+        if let Some(mut tx) = active_tx {
+            tx.transition_to(TransactionStatus::Committed);
+            println!("[CHRONOS] Transaction Committed.");
+            record_transaction(tx);
+        }
 
-        // Handle shell exit condition safely after transaction is saved
         match status {
             BuiltinStatus::Exit => return true,
             _ => return false,

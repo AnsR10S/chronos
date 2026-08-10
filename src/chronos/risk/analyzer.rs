@@ -1,71 +1,145 @@
-use crate::parser::ast::Command;
+use crate::parser::ast::{Command, Redirect};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum RiskLevel {
     Safe,
+    ShellStateChange, // For cd, declare, etc.
     StateChanging,
     Destructive,
+    VeryHigh,         // For catastrophic operations
     Unknown,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum RiskReason {
     ReadOnlyCommand,
+    ShellStateCommand,
     StateAlteringCommand,
     DestructiveCommand,
     UnknownCommand,
-    // Dynamic reasons based on argument scanning
     RecursiveFlag,
     ForceFlag,
     WildcardTarget,
     RootDirectoryTarget,
+    FileOverwrite,
+    FileAppend,
+    StderrRedirect,
+    NetworkCommand, // For ping, curl, etc.
 }
 
-#[derive(Debug)]
+// Granular Effects Model
+#[derive(Debug, PartialEq, Clone)]
+pub enum Effect {
+    ReadOnly,
+    ShellStateChange,
+    FilesystemCreate,
+    FilesystemModify,
+    FilesystemDelete,
+    ProcessSpawn,
+    NetworkActivity,
+}
+
+#[derive(Debug, Clone)]
 pub struct RiskAssessment {
     pub level: RiskLevel,
     pub score: u8,
     pub reasons: Vec<RiskReason>,
+    pub effects: Vec<Effect>,
     pub confidence: f32,
 }
 
 pub fn analyze_command(cmd: &Command) -> RiskAssessment {
-    // Establishes the baseline risk based on the command name
+    // Establish the base risk and semantics
     let mut assessment = match cmd.name.as_str() {
-        "echo" | "pwd" | "ls" | "cd" | "type" | "history" | "jobs" | "cat" | "grep" => RiskAssessment {
+        "ls" | "pwd" | "echo" | "cat" | "grep" | "type" | "history" | "jobs" => RiskAssessment {
             level: RiskLevel::Safe,
             score: 0,
             reasons: vec![RiskReason::ReadOnlyCommand],
+            effects: vec![Effect::ReadOnly],
             confidence: 1.0,
         },
-
-        "touch" | "mkdir" | "cp" | "mv" | "declare" | "export" => RiskAssessment {
+        "cd" | "declare" | "export" => RiskAssessment {
+            level: RiskLevel::ShellStateChange,
+            score: 10,
+            reasons: vec![RiskReason::ShellStateCommand],
+            effects: vec![Effect::ShellStateChange],
+            confidence: 1.0,
+        },
+        "touch" | "mkdir" => RiskAssessment {
             level: RiskLevel::StateChanging,
-            score: 30, // Lowered base score
+            score: 20,
             reasons: vec![RiskReason::StateAlteringCommand],
+            effects: vec![Effect::FilesystemCreate],
             confidence: 0.9,
         },
-
+        "cp" | "mv" => RiskAssessment {
+            level: RiskLevel::StateChanging,
+            score: 30,
+            reasons: vec![RiskReason::StateAlteringCommand],
+            effects: vec![Effect::FilesystemCreate, Effect::FilesystemModify],
+            confidence: 0.9,
+        },
         "rm" | "rmdir" => RiskAssessment {
             level: RiskLevel::Destructive,
-            score: 70, // Lowered base score (a single file deletion isn't the end of the world)
+            score: 70,
             reasons: vec![RiskReason::DestructiveCommand],
+            effects: vec![Effect::FilesystemDelete],
             confidence: 0.9,
         },
-
+        "ping" | "curl" | "wget" => RiskAssessment {
+            level: RiskLevel::Unknown,
+            score: 50,
+            reasons: vec![RiskReason::NetworkCommand],
+            effects: vec![Effect::NetworkActivity, Effect::ProcessSpawn],
+            confidence: 0.8,
+        },
         _ => RiskAssessment {
             level: RiskLevel::Unknown,
             score: 50,
             reasons: vec![RiskReason::UnknownCommand],
+            effects: vec![Effect::ProcessSpawn],
             confidence: 0.1,
         },
     };
 
-    // Dynamically scans the arguments to adjust the score and confidence
+    // Redirection Analysis
+    match &cmd.stdout {
+        Redirect::Overwrite(_) | Redirect::Append(_) => {
+            if assessment.level == RiskLevel::Safe || assessment.level == RiskLevel::Unknown || assessment.level == RiskLevel::ShellStateChange {
+                assessment.level = RiskLevel::StateChanging;
+                assessment.score = assessment.score.max(40);
+            }
+            if let Redirect::Overwrite(_) = &cmd.stdout {
+                assessment.reasons.push(RiskReason::FileOverwrite);
+            } else {
+                assessment.reasons.push(RiskReason::FileAppend);
+            }
+            if !assessment.effects.contains(&Effect::FilesystemModify) {
+                assessment.effects.push(Effect::FilesystemModify);
+            }
+        },
+        _ => {}
+    }
+
+    match &cmd.stderr {
+        Redirect::Overwrite(_) | Redirect::Append(_) => {
+            if assessment.level == RiskLevel::Safe || assessment.level == RiskLevel::Unknown || assessment.level == RiskLevel::ShellStateChange {
+                assessment.level = RiskLevel::StateChanging;
+                assessment.score = assessment.score.max(30);
+            }
+            assessment.reasons.push(RiskReason::StderrRedirect);
+            if !assessment.effects.contains(&Effect::FilesystemModify) {
+                assessment.effects.push(Effect::FilesystemModify);
+            }
+        },
+        _ => {}
+    }
+
+    // Argument Flags Analysis
     for arg in &cmd.args {
-        // Check for recursive flags
         if arg == "-r" || arg == "-R" || arg == "-rf" || arg == "-fr" {
             if assessment.level == RiskLevel::Destructive {
+                assessment.level = RiskLevel::VeryHigh; // Elevate to Very High
                 assessment.score = assessment.score.saturating_add(15);
             } else {
                 assessment.score = assessment.score.saturating_add(5);
@@ -75,9 +149,8 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             }
         }
 
-        // Check for force flags
         if arg == "-f" || arg == "-rf" || arg == "-fr" {
-            if assessment.level == RiskLevel::Destructive {
+            if assessment.level == RiskLevel::Destructive || assessment.level == RiskLevel::VeryHigh {
                 assessment.score = assessment.score.saturating_add(10);
             }
             if !assessment.reasons.contains(&RiskReason::ForceFlag) {
@@ -85,7 +158,6 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             }
         }
 
-        // Check for wildcards (reduces confidence because we don't know the exact targets)
         if arg.contains('*') {
             assessment.score = assessment.score.saturating_add(10);
             assessment.confidence *= 0.8;
@@ -94,10 +166,10 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             }
         }
 
-        // Check for catastrophic root targets
         if arg == "/" || arg == "/*" {
-            if assessment.level == RiskLevel::Destructive {
-                assessment.score = 100; // Max out the danger score
+            if assessment.level == RiskLevel::Destructive || assessment.level == RiskLevel::VeryHigh {
+                assessment.level = RiskLevel::VeryHigh;
+                assessment.score = 100;
                 if !assessment.reasons.contains(&RiskReason::RootDirectoryTarget) {
                     assessment.reasons.push(RiskReason::RootDirectoryTarget);
                 }
@@ -105,8 +177,38 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
         }
     }
 
-    // Ensures the score never exceeds 100
     assessment.score = assessment.score.min(100);
-
     assessment
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::ast::Redirect;
+
+    fn make_cmd(name: &str, args: Vec<&str>, stdout: Redirect) -> Command {
+        Command {
+            name: name.to_string(),
+            args: args.into_iter().map(|s| s.to_string()).collect(),
+            stdout,
+            stderr: Redirect::None,
+        }
+    }
+
+    #[test]
+    fn test_risk_matrix() {
+        assert_eq!(analyze_command(&make_cmd("ls", vec![], Redirect::None)).level, RiskLevel::Safe);
+        assert_eq!(analyze_command(&make_cmd("pwd", vec![], Redirect::None)).level, RiskLevel::Safe);
+        assert_eq!(analyze_command(&make_cmd("cd", vec!["project"], Redirect::None)).level, RiskLevel::ShellStateChange);
+        assert_eq!(analyze_command(&make_cmd("touch", vec!["a"], Redirect::None)).level, RiskLevel::StateChanging);
+        assert_eq!(analyze_command(&make_cmd("mkdir", vec!["project"], Redirect::None)).level, RiskLevel::StateChanging);
+        assert_eq!(analyze_command(&make_cmd("cp", vec!["a", "b"], Redirect::None)).level, RiskLevel::StateChanging);
+        assert_eq!(analyze_command(&make_cmd("mv", vec!["a", "b"], Redirect::None)).level, RiskLevel::StateChanging);
+        assert_eq!(analyze_command(&make_cmd("rm", vec!["a"], Redirect::None)).level, RiskLevel::Destructive);
+        assert_eq!(analyze_command(&make_cmd("rm", vec!["-r", "dir"], Redirect::None)).level, RiskLevel::VeryHigh);
+        assert_eq!(analyze_command(&make_cmd("rm", vec!["-rf", "dir/*"], Redirect::None)).level, RiskLevel::VeryHigh);
+        assert_eq!(analyze_command(&make_cmd("echo", vec!["x"], Redirect::Overwrite("a".to_string()))).level, RiskLevel::StateChanging);
+        assert_eq!(analyze_command(&make_cmd("unknown", vec![], Redirect::None)).level, RiskLevel::Unknown);
+        assert_eq!(analyze_command(&make_cmd("./script.sh", vec![], Redirect::None)).level, RiskLevel::Unknown);
+    }
 }

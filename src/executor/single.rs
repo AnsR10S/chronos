@@ -4,7 +4,7 @@ use crate::shell::builtins::{self, BuiltinStatus, BUILTINS};
 use crate::executor::process;
 use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
-use crate::chronos::state::tracker::track_targets; // Import the filesystem tracker
+use crate::chronos::state::tracker::track_targets;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
@@ -66,10 +66,12 @@ pub fn execute(chunk: Vec<String>) -> bool {
         let assessment = analyze_command(&parsed_cmd);
 
         let risk_label = match assessment.level {
-            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",
-            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m",
-            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",
-            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
+            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",                   // Green
+            RiskLevel::ShellStateChange => "\x1b[36mSHELL-STATE\x1b[0m", // Cyan
+            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m", // Yellow
+            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",        // Red
+            RiskLevel::VeryHigh => "\x1b[1;31mVERY HIGH\x1b[0m",         // Bold Red
+            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",              // Magenta
         };
 
         println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
@@ -77,8 +79,11 @@ pub fn execute(chunk: Vec<String>) -> bool {
                  assessment.score,
                  assessment.confidence * 100.0);
 
-        // If the command alters state, track the filesystem targets before executing
-        if assessment.level == RiskLevel::StateChanging || assessment.level == RiskLevel::Destructive {
+        // Track filesystem targets for any operations that potentially modify data
+        if assessment.level == RiskLevel::StateChanging
+            || assessment.level == RiskLevel::Destructive
+            || assessment.level == RiskLevel::VeryHigh
+        {
             let targets = track_targets(&parsed_cmd);
             if !targets.is_empty() {
                 println!("[CHRONOS] Tracking Filesystem Targets:");

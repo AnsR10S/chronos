@@ -12,12 +12,10 @@ pub fn execute(_args: &[String], stdout: &Redirect) -> BuiltinStatus {
 
     let mut output = String::new();
 
-    // Print the table header
     output.push_str(&format!("{:<18} | {:<12} | {:<15} | {}\n", "TRANSACTION ID", "STATUS", "RISK", "COMMAND"));
     output.push_str(&"-".repeat(75));
     output.push('\n');
 
-    // Print each transaction row
     for tx in registry.iter() {
         let risk_str = format!("{:?}", tx.assessment.level);
         let status_str = format!("{:?}", tx.status);

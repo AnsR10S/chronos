@@ -5,7 +5,7 @@ use crate::executor::process;
 use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
 use crate::chronos::state::tracker::track_targets;
-use crate::chronos::transaction::manager::{Transaction, TransactionStatus, record_transaction}; // Import Transaction system
+use crate::chronos::transaction::manager::{Transaction, TransactionStatus, record_transaction};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
@@ -53,7 +53,7 @@ pub fn capture_builtin(command: &str, args: &[String]) -> String {
 }
 
 pub fn execute(chunk: Vec<String>) -> bool {
-    let command_line = chunk.join(" "); // Capture the raw input for the transaction log
+    let command_line = chunk.join(" ");
 
     if let Some(mut parsed_cmd) = parser::parse(chunk) {
 
@@ -82,7 +82,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
                  assessment.score,
                  assessment.confidence * 100.0);
 
-        let mut targets = Vec::new(); // Lifted outside the if-block to pass to Transaction
+        let mut targets = Vec::new();
         if assessment.level == RiskLevel::StateChanging
             || assessment.level == RiskLevel::Destructive
             || assessment.level == RiskLevel::VeryHigh
@@ -104,8 +104,23 @@ pub fn execute(chunk: Vec<String>) -> bool {
         }
 
         // Initialize the Transaction
-        let mut tx = Transaction::new(command_line, assessment, targets);
+        let mut tx = Transaction::new(command_line, assessment.clone(), targets);
         println!("[CHRONOS] Transaction Created: {}", tx.id);
+
+        if assessment.level == RiskLevel::StateChanging
+            || assessment.level == RiskLevel::Destructive
+            || assessment.level == RiskLevel::VeryHigh
+        {
+            println!("[CHRONOS] Securing targets...");
+            if let Err(e) = crate::chronos::transaction::snapshot::create_snapshot(&tx.id, &tx.targets) {
+                eprintln!("[CHRONOS] ⚠ WARNING: Failed to create snapshot: {}", e);
+                tx.transition_to(TransactionStatus::Failed);
+                // For a strict security model, you could `return false;` here to block execution on snapshot failure.
+            } else {
+                tx.transition_to(TransactionStatus::Prepared);
+                println!("[CHRONOS] Snapshot secured successfully.");
+            }
+        }
 
         // Transition to Executing
         tx.transition_to(TransactionStatus::Executing);

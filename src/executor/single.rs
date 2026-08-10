@@ -5,6 +5,7 @@ use crate::executor::process;
 use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
 use crate::chronos::state::tracker::track_targets;
+use crate::chronos::transaction::manager::{Transaction, TransactionStatus, record_transaction}; // Import Transaction system
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 
@@ -52,6 +53,8 @@ pub fn capture_builtin(command: &str, args: &[String]) -> String {
 }
 
 pub fn execute(chunk: Vec<String>) -> bool {
+    let command_line = chunk.join(" "); // Capture the raw input for the transaction log
+
     if let Some(mut parsed_cmd) = parser::parse(chunk) {
 
         let mut is_background = false;
@@ -66,12 +69,12 @@ pub fn execute(chunk: Vec<String>) -> bool {
         let assessment = analyze_command(&parsed_cmd);
 
         let risk_label = match assessment.level {
-            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",                   // Green
-            RiskLevel::ShellStateChange => "\x1b[36mSHELL-STATE\x1b[0m", // Cyan
-            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m", // Yellow
-            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",        // Red
-            RiskLevel::VeryHigh => "\x1b[1;31mVERY HIGH\x1b[0m",         // Bold Red
-            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",              // Magenta
+            RiskLevel::Safe => "\x1b[32mSAFE\x1b[0m",
+            RiskLevel::ShellStateChange => "\x1b[36mSHELL-STATE\x1b[0m",
+            RiskLevel::StateChanging => "\x1b[33mSTATE-CHANGING\x1b[0m",
+            RiskLevel::Destructive => "\x1b[31mDANGEROUS\x1b[0m",
+            RiskLevel::VeryHigh => "\x1b[1;31mVERY HIGH\x1b[0m",
+            RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
         println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
@@ -79,15 +82,15 @@ pub fn execute(chunk: Vec<String>) -> bool {
                  assessment.score,
                  assessment.confidence * 100.0);
 
-        // Track filesystem targets for any operations that potentially modify data
+        let mut targets = Vec::new(); // Lifted outside the if-block to pass to Transaction
         if assessment.level == RiskLevel::StateChanging
             || assessment.level == RiskLevel::Destructive
             || assessment.level == RiskLevel::VeryHigh
         {
-            let targets = track_targets(&parsed_cmd);
+            targets = track_targets(&parsed_cmd);
             if !targets.is_empty() {
                 println!("[CHRONOS] Tracking Filesystem Targets:");
-                for target in targets {
+                for target in &targets {
                     let status = if target.exists {
                         let kind = if target.is_dir { "Directory" } else { "File" };
                         let perms = if target.readonly { "Read-Only" } else { "Writable" };
@@ -99,6 +102,13 @@ pub fn execute(chunk: Vec<String>) -> bool {
                 }
             }
         }
+
+        // Initialize the Transaction
+        let mut tx = Transaction::new(command_line, assessment, targets);
+        println!("[CHRONOS] Transaction Created: {}", tx.id);
+
+        // Transition to Executing
+        tx.transition_to(TransactionStatus::Executing);
 
         match &parsed_cmd.stdout {
             Redirect::None => {}
@@ -112,29 +122,39 @@ pub fn execute(chunk: Vec<String>) -> bool {
             Redirect::Append(path) => { let _ = OpenOptions::new().create(true).append(true).open(path); }
         }
 
-        match builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout) {
-            BuiltinStatus::Exit => return true,
-            BuiltinStatus::Handled => return false,
-            BuiltinStatus::NotHandled => {
-                if builtins::find_executable(&parsed_cmd.name).is_some() {
-                    if is_background {
-                        process::run_background(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
-                    } else {
-                        process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
-                    }
+        // Evaluate command
+        let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
+
+        if status == BuiltinStatus::NotHandled {
+            if builtins::find_executable(&parsed_cmd.name).is_some() {
+                if is_background {
+                    process::run_background(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
                 } else {
-                    let error_msg = format!("{}: command not found\n", parsed_cmd.name);
-                    match &parsed_cmd.stderr {
-                        Redirect::None => eprint!("{}", error_msg),
-                        Redirect::Overwrite(path) => {
-                            if let Ok(mut f) = File::create(path) { let _ = f.write_all(error_msg.as_bytes()); }
-                        }
-                        Redirect::Append(path) => {
-                            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) { let _ = f.write_all(error_msg.as_bytes()); }
-                        }
+                    process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
+                }
+            } else {
+                let error_msg = format!("{}: command not found\n", parsed_cmd.name);
+                match &parsed_cmd.stderr {
+                    Redirect::None => eprint!("{}", error_msg),
+                    Redirect::Overwrite(path) => {
+                        if let Ok(mut f) = File::create(path) { let _ = f.write_all(error_msg.as_bytes()); }
+                    }
+                    Redirect::Append(path) => {
+                        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) { let _ = f.write_all(error_msg.as_bytes()); }
                     }
                 }
             }
+        }
+
+        // Commit the transaction and save it to the registry
+        tx.transition_to(TransactionStatus::Committed);
+        println!("[CHRONOS] Transaction Committed.");
+        record_transaction(tx);
+
+        // Handle shell exit condition safely after transaction is saved
+        match status {
+            BuiltinStatus::Exit => return true,
+            _ => return false,
         }
     }
     false

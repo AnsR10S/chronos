@@ -3,10 +3,10 @@ use crate::parser::ast::{Command, Redirect};
 #[derive(Debug, PartialEq, Clone)]
 pub enum RiskLevel {
     Safe,
-    ShellStateChange, // For cd, declare, etc.
+    ShellStateChange,
     StateChanging,
     Destructive,
-    VeryHigh,         // For catastrophic operations
+    VeryHigh,
     Unknown,
 }
 
@@ -24,10 +24,9 @@ pub enum RiskReason {
     FileOverwrite,
     FileAppend,
     StderrRedirect,
-    NetworkCommand, // For ping, curl, etc.
+    NetworkCommand,
 }
 
-// Granular Effects Model
 #[derive(Debug, PartialEq, Clone)]
 pub enum Effect {
     ReadOnly,
@@ -49,7 +48,6 @@ pub struct RiskAssessment {
 }
 
 pub fn analyze_command(cmd: &Command) -> RiskAssessment {
-    // Establish the base risk and semantics
     let mut assessment = match cmd.name.as_str() {
         "ls" | "pwd" | "echo" | "cat" | "grep" | "type" | "history" | "jobs" => RiskAssessment {
             level: RiskLevel::Safe,
@@ -102,7 +100,6 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
         },
     };
 
-    // Redirection Analysis
     match &cmd.stdout {
         Redirect::Overwrite(_) | Redirect::Append(_) => {
             if assessment.level == RiskLevel::Safe || assessment.level == RiskLevel::Unknown || assessment.level == RiskLevel::ShellStateChange {
@@ -135,11 +132,10 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
         _ => {}
     }
 
-    // Argument Flags Analysis
     for arg in &cmd.args {
         if arg == "-r" || arg == "-R" || arg == "-rf" || arg == "-fr" {
             if assessment.level == RiskLevel::Destructive {
-                assessment.level = RiskLevel::VeryHigh; // Elevate to Very High
+                assessment.level = RiskLevel::VeryHigh;
                 assessment.score = assessment.score.saturating_add(15);
             } else {
                 assessment.score = assessment.score.saturating_add(5);

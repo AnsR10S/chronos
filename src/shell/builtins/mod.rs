@@ -13,17 +13,19 @@ pub mod complete;
 pub mod jobs;
 pub mod history;
 pub mod declare;
+pub mod transactions;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+#[derive(PartialEq)]
 pub enum BuiltinStatus {
     Handled,
     NotHandled,
     Exit,
 }
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history", "declare"];
+pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history", "declare", "transactions"];
 
 pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -140,6 +142,7 @@ pub fn execute(command: &str, args: &[String], stdout: &Redirect) -> BuiltinStat
         "jobs" => jobs::execute(args, stdout),
         "history" => history::execute(args, stdout),
         "declare" => declare::execute(args, stdout),
+        "transactions" => transactions::execute(args, stdout),
         _ => BuiltinStatus::NotHandled,
     }
 }

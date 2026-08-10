@@ -2,7 +2,7 @@ use std::path::Path;
 use std::fs;
 use crate::parser::ast::{Command, Redirect};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FsTarget {
     pub path: String,
     pub exists: bool,
@@ -13,12 +13,10 @@ pub struct FsTarget {
 pub fn track_targets(cmd: &Command) -> Vec<FsTarget> {
     let mut targets = Vec::new();
 
-    // Resolve argument targets
     for arg in &cmd.args {
         if arg.starts_with('-') { continue; }
 
         if arg.contains('*') {
-            // Naive Glob Resolution for the current directory
             if let Ok(entries) = fs::read_dir(".") {
                 let parts: Vec<&str> = arg.split('*').collect();
                 let prefix = parts.first().unwrap_or(&"");
@@ -37,7 +35,6 @@ pub fn track_targets(cmd: &Command) -> Vec<FsTarget> {
         }
     }
 
-    // Track redirection targets
     match &cmd.stdout {
         Redirect::Overwrite(path) | Redirect::Append(path) => {
             targets.push(inspect_path(path));

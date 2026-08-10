@@ -6,16 +6,36 @@ use crate::chronos::transaction::snapshot::restore_snapshot;
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     let mut registry = transaction_registry().lock().unwrap();
 
+    if registry.is_empty() {
+        print_output("No transactions recorded in this session.\n", stdout);
+        return BuiltinStatus::Handled;
+    }
+
+    let mut is_cascade = false;
+    let mut requested_id = None;
+
+    // Parse arguments for flags and transaction IDs
+    for arg in args {
+        if arg == "--cascade" {
+            is_cascade = true;
+        } else if arg.starts_with("tx_") {
+            requested_id = Some(arg.clone());
+        }
+    }
+
+    // Find the target transaction index
     let mut target_tx_index = None;
 
-    if let Some(requested_id) = args.get(0) {
+    if let Some(ref req_id) = requested_id {
+        // Find specific ID
         for (i, tx) in registry.iter().enumerate().rev() {
-            if &tx.id == requested_id {
+            if &tx.id == req_id {
                 target_tx_index = Some(i);
                 break;
             }
         }
     } else {
+        // Find most recent committed transaction with targets
         for (i, tx) in registry.iter().enumerate().rev() {
             if tx.status == TransactionStatus::Committed && !tx.targets.is_empty() {
                 target_tx_index = Some(i);
@@ -24,28 +44,38 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         }
     }
 
-    if let Some(idx) = target_tx_index {
-        let tx = registry[idx].clone();
+    if let Some(target_idx) = target_tx_index {
+        // Determine the range to undo
+        let start_idx = if is_cascade { registry.len() - 1 } else { target_idx };
 
-        if tx.status == TransactionStatus::RolledBack {
-            print_output("Transaction is already rolled back.\n", stdout);
-            return BuiltinStatus::Handled;
-        }
+        // Undo in reverse chronological order (latest first)
+        for i in (target_idx..=start_idx).rev() {
+            let tx = registry[i].clone();
 
-        print_output(&format!("[CHRONOS] Undoing transaction: {}\n", tx.id), stdout);
-        print_output(&format!("[CHRONOS] Original command: {}\n", tx.command_line), stdout);
+            // Skip transactions that are already rolled back or have no targets
+            if tx.status != TransactionStatus::Committed || tx.targets.is_empty() {
+                continue;
+            }
 
-        match restore_snapshot(&tx.id, &tx.targets) {
-            Ok(_) => {
-                print_output("[CHRONOS] Successfully restored files from snapshot.\n", stdout);
-                registry[idx].status = TransactionStatus::RolledBack;
-            },
-            Err(e) => {
-                print_output(&format!("[CHRONOS] ⚠ Failed to restore snapshot: {}\n", e), stdout);
+            print_output(&format!("\n[CHRONOS] Undoing transaction: {}\n", tx.id), stdout);
+            print_output(&format!("[CHRONOS] Original command: {}\n", tx.command_line), stdout);
+
+            match restore_snapshot(&tx.id, &tx.targets) {
+                Ok(_) => {
+                    print_output("[CHRONOS] Successfully restored files from snapshot.\n", stdout);
+                    registry[i].status = TransactionStatus::RolledBack;
+                },
+                Err(e) => {
+                    print_output(&format!("[CHRONOS] ⚠ Failed to restore snapshot: {}\n", e), stdout);
+                }
             }
         }
     } else {
-        print_output("No undoable transactions found.\n", stdout);
+        if requested_id.is_some() {
+            print_output("Transaction ID not found.\n", stdout);
+        } else {
+            print_output("No undoable transactions found.\n", stdout);
+        }
     }
 
     BuiltinStatus::Handled

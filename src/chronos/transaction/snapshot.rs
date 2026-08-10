@@ -43,18 +43,14 @@ pub fn restore_snapshot(tx_id: &str, targets: &[FsTarget]) -> Result<(), std::io
         let dest_path = Path::new(&target.path);
 
         if !target.exists {
-            // ROLLBACK CREATION: Target did not exist before the command ran.
-            // To undo its creation, we must delete it.
             if dest_path.exists() {
                 if dest_path.is_dir() {
-                    let _ = fs::remove_dir_all(dest_path); // Remove created folder
+                    let _ = fs::remove_dir_all(dest_path);
                 } else {
-                    let _ = fs::remove_file(dest_path); // Remove created file
+                    let _ = fs::remove_file(dest_path);
                 }
             }
         } else if let Some(ref snap_dir) = snap_dir_opt {
-            // ROLLBACK DESTRUCTION/MODIFICATION: Target existed before.
-            // We must restore it from the backup snapshot folder.
             if snap_dir.exists() {
                 let safe_name = target.path.replace("/", "_").replace("\\", "_");
                 let source_path = snap_dir.join(&safe_name);

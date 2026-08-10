@@ -56,7 +56,6 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             effects: vec![Effect::ReadOnly],
             confidence: 1.0,
         },
-        // Added exit, transactions, and undo to the safe list
         "cd" | "declare" | "export" | "exit" | "transactions" | "undo" => RiskAssessment {
             level: RiskLevel::ShellStateChange,
             score: 10,

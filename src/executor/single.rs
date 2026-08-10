@@ -77,10 +77,8 @@ pub fn execute(chunk: Vec<String>) -> bool {
             RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
-        // Check if this is a meta-command that shouldn't enter the ledger
         let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "transactions" | "exit" | "history");
 
-        // We only print the assessment block for normal commands (keeps output clean when viewing history)
         if !is_meta_command {
             println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
                      risk_label,
@@ -109,7 +107,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        // Only wrap in a transaction if it's not a meta-command
         let active_tx = if !is_meta_command {
             let mut tx = Transaction::new(command_line, assessment.clone(), targets);
             println!("[CHRONOS] Transaction Created: {}", tx.id);
@@ -169,7 +166,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        // Only commit the transaction if one was actually created
         if let Some(mut tx) = active_tx {
             tx.transition_to(TransactionStatus::Committed);
             println!("[CHRONOS] Transaction Committed.");

@@ -13,6 +13,7 @@ pub mod complete;
 pub mod jobs;
 pub mod history;
 pub mod declare;
+pub mod redo;
 pub mod transactions;
 pub mod undo;
 
@@ -26,7 +27,7 @@ pub enum BuiltinStatus {
     Exit,
 }
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history", "declare", "transactions", "undo"];
+pub const BUILTINS: &[&str] = &["exit", "echo", "type", "pwd", "cd", "complete", "jobs", "history", "declare", "transactions", "undo", "redo"];
 
 pub fn completion_registry() -> &'static Mutex<HashMap<String, String>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -145,6 +146,7 @@ pub fn execute(command: &str, args: &[String], stdout: &Redirect) -> BuiltinStat
         "declare" => declare::execute(args, stdout),
         "transactions" => transactions::execute(args, stdout),
         "undo" => undo::execute(args, stdout),
+        "redo" => redo::execute(args, stdout),
         _ => BuiltinStatus::NotHandled,
     }
 }

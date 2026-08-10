@@ -14,7 +14,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     let mut is_cascade = false;
     let mut requested_id = None;
 
-    // Parse arguments for flags and transaction IDs
     for arg in args {
         if arg == "--cascade" {
             is_cascade = true;
@@ -23,11 +22,9 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         }
     }
 
-    // Find the target transaction index
     let mut target_tx_index = None;
 
     if let Some(ref req_id) = requested_id {
-        // Find specific ID
         for (i, tx) in registry.iter().enumerate().rev() {
             if &tx.id == req_id {
                 target_tx_index = Some(i);
@@ -35,7 +32,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
         }
     } else {
-        // Find most recent committed transaction with targets
         for (i, tx) in registry.iter().enumerate().rev() {
             if tx.status == TransactionStatus::Committed && !tx.targets.is_empty() {
                 target_tx_index = Some(i);
@@ -45,14 +41,11 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     }
 
     if let Some(target_idx) = target_tx_index {
-        // Determine the range to undo
         let start_idx = if is_cascade { registry.len() - 1 } else { target_idx };
 
-        // Undo in reverse chronological order (latest first)
         for i in (target_idx..=start_idx).rev() {
             let tx = registry[i].clone();
 
-            // Skip transactions that are already rolled back or have no targets
             if tx.status != TransactionStatus::Committed || tx.targets.is_empty() {
                 continue;
             }

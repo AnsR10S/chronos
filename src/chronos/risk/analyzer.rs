@@ -56,7 +56,7 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             effects: vec![Effect::ReadOnly],
             confidence: 1.0,
         },
-        "cd" | "declare" | "export" | "exit" | "transactions" | "undo" => RiskAssessment {
+        "cd" | "declare" | "export" | "exit" | "transactions" | "undo" | "redo" => RiskAssessment {
             level: RiskLevel::ShellStateChange,
             score: 10,
             reasons: vec![RiskReason::ShellStateCommand],

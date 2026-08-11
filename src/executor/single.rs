@@ -55,7 +55,7 @@ pub fn capture_builtin(command: &str, args: &[String]) -> String {
 pub fn execute(chunk: Vec<String>) -> bool {
     let command_line = chunk.join(" ");
 
-    if let Some(mut parsed_cmd) = parser::parse(chunk) {
+    if let Some(mut parsed_cmd) = parser::parse(chunk.clone()) {
 
         let mut is_background = false;
 
@@ -107,9 +107,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        // Only wrap in a transaction if it's not a meta-command
         let active_tx = if !is_meta_command {
-            // Pass chunk.clone() into the transaction to perfectly preserve arguments
             let mut tx = Transaction::new(command_line, chunk.clone(), assessment.clone(), targets);
             println!("[CHRONOS] Transaction Created: {}", tx.id);
 

@@ -24,7 +24,7 @@ pub struct Transaction {
     pub id: String,
     pub timestamp: u128,
     pub command_line: String,
-    #[serde(default)] // Prevents crashing on old history.json files
+    #[serde(default)] 
     pub chunk: Vec<String>,
     pub assessment: RiskAssessment,
     pub targets: Vec<FsTarget>,
@@ -38,7 +38,6 @@ impl Transaction {
             .unwrap_or_default()
             .as_millis();
 
-        // Guaranteed uniqueness using an atomic process counter
         let count = TX_COUNTER.fetch_add(1, Ordering::SeqCst);
         let id = format!("tx_{}_{}", timestamp, count);
 
@@ -102,7 +101,6 @@ pub fn record_transaction(tx: Transaction) {
     save_registry();
 }
 
-// Semantic Target Parser
 pub fn parse_transaction_targets(args: &[String], registry: &[Transaction]) -> Result<Vec<usize>, String> {
     let mut ids = Vec::new();
     let mut is_cascade = false;

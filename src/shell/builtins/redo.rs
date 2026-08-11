@@ -35,13 +35,11 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
         }
 
-        // Redo strictly chronologically
         indices.sort();
 
         for i in indices {
             let tx = &registry[i];
             if tx.status == TransactionStatus::RolledBack {
-                // Pull the perfectly preserved token chunk, not the raw command string
                 commands_to_run.push((tx.id.clone(), tx.chunk.clone()));
             }
         }
@@ -50,7 +48,7 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             print_output("No valid rolled back transactions found in selection.\n", stdout);
             return BuiltinStatus::Handled;
         }
-    } // Lock drops
+    } 
 
     for (id, chunk) in commands_to_run {
         print_output(&format!("\n[CHRONOS] Redoing transaction: {}\n", id), stdout);

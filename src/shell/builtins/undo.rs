@@ -1,6 +1,6 @@
 use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
-use crate::chronos::transaction::manager::{Transaction, transaction_registry, TransactionStatus, save_registry, parse_transaction_targets};
+use crate::chronos::transaction::manager::{transaction_registry, TransactionStatus, save_registry, parse_transaction_targets};
 use crate::chronos::transaction::snapshot::restore_snapshot;
 
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
@@ -22,7 +22,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         };
 
         if indices.is_empty() {
-            // Default: Find the most recent valid commit
             for (i, tx) in registry.iter().enumerate().rev() {
                 if tx.status == TransactionStatus::Committed && !tx.targets.is_empty() {
                     indices.push(i);
@@ -35,7 +34,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
         }
 
-        // DEPENDENCY CHECK
         if !is_cascade {
             let mut latest_committed = None;
             for (i, tx) in registry.iter().enumerate().rev() {
@@ -55,7 +53,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
         }
 
-        // Always undo backwards (latest to oldest)
         indices.sort();
         indices.reverse();
 

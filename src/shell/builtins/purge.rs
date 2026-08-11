@@ -25,7 +25,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
                 print_output("[CHRONOS] All transaction history and snapshots successfully purged.\n", stdout);
             },
             Ok(mut indices) => {
-                // Remove backwards so shifting elements doesn't break indices
                 indices.sort();
                 indices.reverse();
 

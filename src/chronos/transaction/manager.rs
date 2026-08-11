@@ -19,7 +19,7 @@ pub enum TransactionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,
-    pub timestamp: u128, 
+    pub timestamp: u128,
     pub command_line: String,
     pub assessment: RiskAssessment,
     pub targets: Vec<FsTarget>,
@@ -93,4 +93,48 @@ pub fn record_transaction(tx: Transaction) {
     }
 
     save_registry();
+}
+
+pub fn parse_transaction_range(args: &[String], registry: &[Transaction]) -> Result<Option<(usize, usize)>, String> {
+    let mut ids = Vec::new();
+    let mut cascade = false;
+
+    // Extract flags and IDs
+    for arg in args {
+        if arg == "--cascade" {
+            cascade = true;
+        } else if arg.starts_with("tx_") {
+            ids.push(arg.clone());
+        }
+    }
+
+    if ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut indices = Vec::new();
+    for id in &ids {
+        if let Some(pos) = registry.iter().position(|tx| &tx.id == id) {
+            indices.push(pos);
+        } else {
+            return Err(format!("Transaction ID {} not found.", id));
+        }
+    }
+
+    // Determine the boundaries
+    if indices.len() == 1 {
+        let start = indices[0];
+        if cascade {
+            // From the specified ID to the very end of the registry
+            Ok(Some((start, registry.len().saturating_sub(1))))
+        } else {
+            // Just the single specified ID
+            Ok(Some((start, start)))
+        }
+    } else {
+        // Find the min and max from multiple specified IDs (e.g., tx_3 tx_7)
+        let min_idx = *indices.iter().min().unwrap();
+        let max_idx = *indices.iter().max().unwrap();
+        Ok(Some((min_idx, max_idx)))
+    }
 }

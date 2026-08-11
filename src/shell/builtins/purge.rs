@@ -1,34 +1,54 @@
 use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
-use crate::chronos::transaction::manager::{transaction_registry, save_registry};
+use crate::chronos::transaction::manager::{transaction_registry, save_registry, parse_transaction_range};
 use std::fs;
 use std::path::PathBuf;
 
-pub fn execute(_args: &[String], stdout: &Redirect) -> BuiltinStatus {
-    // Wipes the in-memory ledger
-    {
-        let mut registry = transaction_registry().lock().unwrap();
-        registry.clear();
+pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
+    let mut home_dir = PathBuf::new();
+    if let Some(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok() {
+        home_dir.push(home);
+        home_dir.push(".chronos");
+        home_dir.push("snapshots");
     }
 
-    // Overwrites history.json with the empty ledger
-    save_registry();
+    {
+        let mut registry = transaction_registry().lock().unwrap();
 
-    // Locates and deletes the physical snapshots folder
-    let mut snap_dir = PathBuf::new();
-    if let Some(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok() {
-        snap_dir.push(home);
-        snap_dir.push(".chronos");
-        snap_dir.push("snapshots");
+        match parse_transaction_range(args, &registry) {
+            Ok(None) => {
+                // Default: Nuclear Purge
+                registry.clear();
+                if home_dir.exists() {
+                    let _ = fs::remove_dir_all(&home_dir);
+                }
+                print_output("[CHRONOS] All transaction history and snapshots successfully purged.\n", stdout);
+            },
+            Ok(Some((start, end))) => {
+                // Precision Purge: Loop backwards so removing items doesn't shift the indices
+                let mut count = 0;
+                for i in (start..=end).rev() {
+                    let tx_id = registry[i].id.clone();
 
-        if snap_dir.exists() {
-            if let Err(e) = fs::remove_dir_all(&snap_dir) {
-                print_output(&format!("[CHRONOS] ⚠ Failed to delete physical snapshots: {}\n", e), stdout);
-                return BuiltinStatus::Handled;
+                    // Delete specific physical folder
+                    if home_dir.exists() {
+                        let tx_dir = home_dir.join(&tx_id);
+                        if tx_dir.exists() {
+                            let _ = fs::remove_dir_all(&tx_dir);
+                        }
+                    }
+                    // Remove from ledger
+                    registry.remove(i);
+                    count += 1;
+                }
+                print_output(&format!("[CHRONOS] Purged {} specific transaction(s) from history.\n", count), stdout);
+            },
+            Err(e) => {
+                print_output(&format!("[CHRONOS] ⚠ {}\n", e), stdout);
             }
         }
     }
 
-    print_output("[CHRONOS] Transaction history and physical snapshots successfully purged.\n", stdout);
+    save_registry();
     BuiltinStatus::Handled
 }

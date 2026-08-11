@@ -1,6 +1,6 @@
 use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
-use crate::chronos::transaction::manager::{transaction_registry, TransactionStatus};
+use crate::chronos::transaction::manager::{transaction_registry, TransactionStatus, parse_transaction_range};
 use crate::executor::single::execute as execute_command;
 
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
@@ -14,54 +14,44 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             return BuiltinStatus::Handled;
         }
 
-        let mut is_cascade = false;
-        let mut requested_id = None;
-
-        for arg in args {
-            if arg == "--cascade" {
-                is_cascade = true;
-            } else if arg.starts_with("tx_") {
-                requested_id = Some(arg.clone());
-            }
-        }
-
-        let mut target_tx_index = None;
-
-        if let Some(ref req_id) = requested_id {
-            for (i, tx) in registry.iter().enumerate() {
-                if &tx.id == req_id {
-                    target_tx_index = Some(i);
-                    break;
+        match parse_transaction_range(args, &registry) {
+            Ok(None) => {
+                // Default: Find the most recently rolled back transaction
+                let mut target = None;
+                for (i, tx) in registry.iter().enumerate().rev() {
+                    if tx.status == TransactionStatus::RolledBack {
+                        target = Some(i);
+                        break;
+                    }
                 }
-            }
-        } else {
-            for (i, tx) in registry.iter().enumerate().rev() {
-                if tx.status == TransactionStatus::RolledBack {
-                    target_tx_index = Some(i);
-                    break;
+                if let Some(idx) = target {
+                    commands_to_run.push((registry[idx].id.clone(), registry[idx].command_line.clone()));
+                } else {
+                    print_output("No rolled back transactions found to redo.\n", stdout);
+                    return BuiltinStatus::Handled;
                 }
-            }
-        }
-
-        if let Some(target_idx) = target_tx_index {
-            let end_idx = if is_cascade { registry.len() - 1 } else { target_idx };
-
-            for i in target_idx..=end_idx {
-                let tx = &registry[i];
-                if tx.status == TransactionStatus::RolledBack {
-                    commands_to_run.push((tx.id.clone(), tx.command_line.clone()));
+            },
+            Ok(Some((start, end))) => {
+                // Always redo forwards (oldest to newest)
+                for i in start..=end {
+                    let tx = &registry[i];
+                    if tx.status == TransactionStatus::RolledBack {
+                        commands_to_run.push((tx.id.clone(), tx.command_line.clone()));
+                    }
                 }
+                if commands_to_run.is_empty() {
+                    print_output("No rolled back transactions found in that range.\n", stdout);
+                    return BuiltinStatus::Handled;
+                }
+            },
+            Err(e) => {
+                print_output(&format!("[CHRONOS] ⚠ {}\n", e), stdout);
+                return BuiltinStatus::Handled;
             }
-        } else {
-            if requested_id.is_some() {
-                print_output("Transaction ID not found.\n", stdout);
-            } else {
-                print_output("No rolled back transactions found to redo.\n", stdout);
-            }
-            return BuiltinStatus::Handled;
         }
     }
 
+    // Execute the gathered commands outside the lock
     for (id, cmd_line) in commands_to_run {
         print_output(&format!("\n[CHRONOS] Redoing transaction: {}\n", id), stdout);
 

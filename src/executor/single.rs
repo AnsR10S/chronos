@@ -77,7 +77,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
-        let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "redo" | "transactions" | "exit" | "history");
+        let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "redo" | "transactions" | "exit" | "history" | "purge");
 
         if !is_meta_command {
             println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",

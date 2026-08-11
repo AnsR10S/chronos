@@ -39,7 +39,7 @@ pub enum Effect {
     NetworkActivity,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)] 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskAssessment {
     pub level: RiskLevel,
     pub score: u8,
@@ -57,7 +57,7 @@ pub fn analyze_command(cmd: &Command) -> RiskAssessment {
             effects: vec![Effect::ReadOnly],
             confidence: 1.0,
         },
-        "cd" | "declare" | "export" | "exit" | "transactions" | "undo" | "redo" => RiskAssessment {
+        "cd" | "declare" | "export" | "exit" | "transactions" | "undo" | "redo" | "purge" => RiskAssessment {
             level: RiskLevel::ShellStateChange,
             score: 10,
             reasons: vec![RiskReason::ShellStateCommand],

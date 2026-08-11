@@ -19,7 +19,7 @@ pub enum TransactionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,
-    pub timestamp: u128, // Changed from u64 to u128 to hold milliseconds
+    pub timestamp: u128, 
     pub command_line: String,
     pub assessment: RiskAssessment,
     pub targets: Vec<FsTarget>,
@@ -28,7 +28,6 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn new(command_line: String, assessment: RiskAssessment, targets: Vec<FsTarget>) -> Self {
-        // Generates timestamp in milliseconds to prevent rapid-fire ID collisions
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -55,7 +54,7 @@ fn get_history_file() -> Option<PathBuf> {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
     let mut path = PathBuf::from(home);
     path.push(".chronos");
-    let _ = fs::create_dir_all(&path); // Ensure the hidden directory exists
+    let _ = fs::create_dir_all(&path);
     path.push("history.json");
     Some(path)
 }
@@ -78,10 +77,9 @@ fn load_registry() -> Vec<Transaction> {
             }
         }
     }
-    Vec::new() // Return an empty ledger if the file doesn't exist yet
+    Vec::new()
 }
 
-// The OnceLock now calls load_registry() the very first time it is accessed on boot
 pub fn transaction_registry() -> &'static Mutex<Vec<Transaction>> {
     static REGISTRY: OnceLock<Mutex<Vec<Transaction>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(load_registry()))
@@ -92,7 +90,7 @@ pub fn record_transaction(tx: Transaction) {
         if let Ok(mut registry) = transaction_registry().lock() {
             registry.push(tx);
         }
-    } // Lock is dropped here so saving doesn't deadlock!
+    }
 
-    save_registry(); // Auto-save to disk instantly
+    save_registry();
 }

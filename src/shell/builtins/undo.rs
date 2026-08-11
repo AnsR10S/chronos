@@ -71,8 +71,8 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
                 print_output("No undoable transactions found.\n", stdout);
             }
         }
-    } // The registry lock drops here
+    }
 
-    save_registry(); // Persist the rollbacks to history.json
+    save_registry();
     BuiltinStatus::Handled
 }

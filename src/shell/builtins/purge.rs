@@ -1,6 +1,6 @@
 use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
-use crate::chronos::transaction::manager::{transaction_registry, save_registry, parse_transaction_range};
+use crate::chronos::transaction::manager::{transaction_registry, save_registry, parse_transaction_targets};
 use std::fs;
 use std::path::PathBuf;
 
@@ -15,29 +15,30 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     {
         let mut registry = transaction_registry().lock().unwrap();
 
-        match parse_transaction_range(args, &registry) {
-            Ok(None) => {
-                // Default: Nuclear Purge
+        match parse_transaction_targets(args, &registry) {
+            Ok(indices) if indices.is_empty() => {
+                print_output("[CHRONOS] ⚠ WARNING: Purging will permanently remove recovery snapshots.\n", stdout);
                 registry.clear();
                 if home_dir.exists() {
                     let _ = fs::remove_dir_all(&home_dir);
                 }
                 print_output("[CHRONOS] All transaction history and snapshots successfully purged.\n", stdout);
             },
-            Ok(Some((start, end))) => {
-                // Precision Purge: Loop backwards so removing items doesn't shift the indices
+            Ok(mut indices) => {
+                // Remove backwards so shifting elements doesn't break indices
+                indices.sort();
+                indices.reverse();
+
                 let mut count = 0;
-                for i in (start..=end).rev() {
+                for i in indices {
                     let tx_id = registry[i].id.clone();
 
-                    // Delete specific physical folder
                     if home_dir.exists() {
                         let tx_dir = home_dir.join(&tx_id);
                         if tx_dir.exists() {
                             let _ = fs::remove_dir_all(&tx_dir);
                         }
                     }
-                    // Remove from ledger
                     registry.remove(i);
                     count += 1;
                 }

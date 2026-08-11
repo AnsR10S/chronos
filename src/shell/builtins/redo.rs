@@ -1,6 +1,6 @@
 use crate::parser::ast::Redirect;
 use crate::shell::builtins::{print_output, BuiltinStatus};
-use crate::chronos::transaction::manager::{transaction_registry, TransactionStatus, parse_transaction_range};
+use crate::chronos::transaction::manager::{transaction_registry, TransactionStatus, parse_transaction_targets};
 use crate::executor::single::execute as execute_command;
 
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
@@ -14,48 +14,46 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             return BuiltinStatus::Handled;
         }
 
-        match parse_transaction_range(args, &registry) {
-            Ok(None) => {
-                // Default: Find the most recently rolled back transaction
-                let mut target = None;
-                for (i, tx) in registry.iter().enumerate().rev() {
-                    if tx.status == TransactionStatus::RolledBack {
-                        target = Some(i);
-                        break;
-                    }
-                }
-                if let Some(idx) = target {
-                    commands_to_run.push((registry[idx].id.clone(), registry[idx].command_line.clone()));
-                } else {
-                    print_output("No rolled back transactions found to redo.\n", stdout);
-                    return BuiltinStatus::Handled;
-                }
-            },
-            Ok(Some((start, end))) => {
-                // Always redo forwards (oldest to newest)
-                for i in start..=end {
-                    let tx = &registry[i];
-                    if tx.status == TransactionStatus::RolledBack {
-                        commands_to_run.push((tx.id.clone(), tx.command_line.clone()));
-                    }
-                }
-                if commands_to_run.is_empty() {
-                    print_output("No rolled back transactions found in that range.\n", stdout);
-                    return BuiltinStatus::Handled;
-                }
-            },
+        let mut indices = match parse_transaction_targets(args, &registry) {
+            Ok(vec) => vec,
             Err(e) => {
                 print_output(&format!("[CHRONOS] ⚠ {}\n", e), stdout);
                 return BuiltinStatus::Handled;
             }
+        };
+
+        if indices.is_empty() {
+            for (i, tx) in registry.iter().enumerate().rev() {
+                if tx.status == TransactionStatus::RolledBack {
+                    indices.push(i);
+                    break;
+                }
+            }
+            if indices.is_empty() {
+                print_output("No rolled back transactions found to redo.\n", stdout);
+                return BuiltinStatus::Handled;
+            }
         }
-    }
 
-    // Execute the gathered commands outside the lock
-    for (id, cmd_line) in commands_to_run {
+        // Redo strictly chronologically
+        indices.sort();
+
+        for i in indices {
+            let tx = &registry[i];
+            if tx.status == TransactionStatus::RolledBack {
+                // Pull the perfectly preserved token chunk, not the raw command string
+                commands_to_run.push((tx.id.clone(), tx.chunk.clone()));
+            }
+        }
+
+        if commands_to_run.is_empty() {
+            print_output("No valid rolled back transactions found in selection.\n", stdout);
+            return BuiltinStatus::Handled;
+        }
+    } // Lock drops
+
+    for (id, chunk) in commands_to_run {
         print_output(&format!("\n[CHRONOS] Redoing transaction: {}\n", id), stdout);
-
-        let chunk: Vec<String> = cmd_line.split_whitespace().map(|s| s.to_string()).collect();
         execute_command(chunk);
     }
 

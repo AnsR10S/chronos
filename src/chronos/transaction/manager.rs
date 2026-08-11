@@ -1,10 +1,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fs;
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use crate::chronos::risk::analyzer::RiskAssessment;
 use crate::chronos::state::tracker::FsTarget;
+
+static TX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TransactionStatus {
@@ -21,24 +24,29 @@ pub struct Transaction {
     pub id: String,
     pub timestamp: u128,
     pub command_line: String,
+    #[serde(default)] // Prevents crashing on old history.json files
+    pub chunk: Vec<String>,
     pub assessment: RiskAssessment,
     pub targets: Vec<FsTarget>,
     pub status: TransactionStatus,
 }
 
 impl Transaction {
-    pub fn new(command_line: String, assessment: RiskAssessment, targets: Vec<FsTarget>) -> Self {
+    pub fn new(command_line: String, chunk: Vec<String>, assessment: RiskAssessment, targets: Vec<FsTarget>) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
 
-        let id = format!("tx_{}", timestamp);
+        // Guaranteed uniqueness using an atomic process counter
+        let count = TX_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let id = format!("tx_{}_{}", timestamp, count);
 
         Transaction {
             id,
             timestamp,
             command_line,
+            chunk,
             assessment,
             targets,
             status: TransactionStatus::Pending,
@@ -91,25 +99,27 @@ pub fn record_transaction(tx: Transaction) {
             registry.push(tx);
         }
     }
-
     save_registry();
 }
 
-pub fn parse_transaction_range(args: &[String], registry: &[Transaction]) -> Result<Option<(usize, usize)>, String> {
+// Semantic Target Parser
+pub fn parse_transaction_targets(args: &[String], registry: &[Transaction]) -> Result<Vec<usize>, String> {
     let mut ids = Vec::new();
-    let mut cascade = false;
+    let mut is_cascade = false;
+    let mut is_range = false;
 
-    // Extract flags and IDs
     for arg in args {
         if arg == "--cascade" {
-            cascade = true;
+            is_cascade = true;
+        } else if arg == "--range" {
+            is_range = true;
         } else if arg.starts_with("tx_") {
             ids.push(arg.clone());
         }
     }
 
     if ids.is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let mut indices = Vec::new();
@@ -121,20 +131,19 @@ pub fn parse_transaction_range(args: &[String], registry: &[Transaction]) -> Res
         }
     }
 
-    // Determine the boundaries
-    if indices.len() == 1 {
+    if is_cascade {
+        if indices.len() != 1 { return Err("--cascade requires exactly one transaction ID.".to_string()); }
         let start = indices[0];
-        if cascade {
-            // From the specified ID to the very end of the registry
-            Ok(Some((start, registry.len().saturating_sub(1))))
-        } else {
-            // Just the single specified ID
-            Ok(Some((start, start)))
-        }
-    } else {
-        // Find the min and max from multiple specified IDs (e.g., tx_3 tx_7)
+        let end = registry.len().saturating_sub(1);
+        return Ok((start..=end).collect());
+    }
+
+    if is_range {
+        if indices.len() != 2 { return Err("--range requires exactly two transaction IDs.".to_string()); }
         let min_idx = *indices.iter().min().unwrap();
         let max_idx = *indices.iter().max().unwrap();
-        Ok(Some((min_idx, max_idx)))
+        return Ok((min_idx..=max_idx).collect());
     }
+
+    Ok(indices)
 }

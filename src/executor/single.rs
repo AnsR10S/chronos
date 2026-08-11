@@ -107,8 +107,10 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
+        // Only wrap in a transaction if it's not a meta-command
         let active_tx = if !is_meta_command {
-            let mut tx = Transaction::new(command_line, assessment.clone(), targets);
+            // Pass chunk.clone() into the transaction to perfectly preserve arguments
+            let mut tx = Transaction::new(command_line, chunk.clone(), assessment.clone(), targets);
             println!("[CHRONOS] Transaction Created: {}", tx.id);
 
             if assessment.level == RiskLevel::StateChanging

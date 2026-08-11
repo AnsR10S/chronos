@@ -1,8 +1,9 @@
 use std::path::Path;
 use std::fs;
 use crate::parser::ast::{Command, Redirect};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FsTarget {
     pub path: String,
     pub exists: bool,

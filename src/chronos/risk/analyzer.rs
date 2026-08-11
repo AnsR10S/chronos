@@ -1,6 +1,7 @@
 use crate::parser::ast::{Command, Redirect};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum RiskLevel {
     Safe,
     ShellStateChange,
@@ -10,7 +11,7 @@ pub enum RiskLevel {
     Unknown,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum RiskReason {
     ReadOnlyCommand,
     ShellStateCommand,
@@ -27,7 +28,7 @@ pub enum RiskReason {
     NetworkCommand,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Effect {
     ReadOnly,
     ShellStateChange,
@@ -38,7 +39,7 @@ pub enum Effect {
     NetworkActivity,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)] 
 pub struct RiskAssessment {
     pub level: RiskLevel,
     pub score: u8,

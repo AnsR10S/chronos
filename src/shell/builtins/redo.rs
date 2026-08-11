@@ -6,7 +6,6 @@ use crate::executor::single::execute as execute_command;
 pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
     let mut commands_to_run = Vec::new();
 
-    // Opens the vault and find what we need to redo
     {
         let registry = transaction_registry().lock().unwrap();
 
@@ -29,7 +28,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         let mut target_tx_index = None;
 
         if let Some(ref req_id) = requested_id {
-            // Find specific ID
             for (i, tx) in registry.iter().enumerate() {
                 if &tx.id == req_id {
                     target_tx_index = Some(i);
@@ -37,7 +35,6 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
                 }
             }
         } else {
-            // Find most recently rolled back transaction
             for (i, tx) in registry.iter().enumerate().rev() {
                 if tx.status == TransactionStatus::RolledBack {
                     target_tx_index = Some(i);
@@ -47,10 +44,8 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
         }
 
         if let Some(target_idx) = target_tx_index {
-            // Determine the range to redo
             let end_idx = if is_cascade { registry.len() - 1 } else { target_idx };
 
-            // Redo in chronological order (oldest to newest)
             for i in target_idx..=end_idx {
                 let tx = &registry[i];
                 if tx.status == TransactionStatus::RolledBack {
@@ -65,13 +60,11 @@ pub fn execute(args: &[String], stdout: &Redirect) -> BuiltinStatus {
             }
             return BuiltinStatus::Handled;
         }
-    } // THE LOCK IS DROPPED HERE! Very important to prevent deadlocks.
+    }
 
-    // Executes the extracted commands
     for (id, cmd_line) in commands_to_run {
         print_output(&format!("\n[CHRONOS] Redoing transaction: {}\n", id), stdout);
 
-        // Split the raw string back into a chunk vector for the executor
         let chunk: Vec<String> = cmd_line.split_whitespace().map(|s| s.to_string()).collect();
         execute_command(chunk);
     }

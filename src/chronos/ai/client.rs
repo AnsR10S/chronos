@@ -1,8 +1,32 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::sync::OnceLock;
+use std::time::Duration;
 use crate::chronos::risk::analyzer::RiskAssessment;
 use crate::chronos::state::tracker::FsTarget;
+
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn get_client() -> &'static Client {
+    HTTP_CLIENT.get_or_init(|| {
+        Client::builder()
+            .pool_idle_timeout(Some(Duration::from_secs(120)))
+            .build()
+            .unwrap_or_default()
+    })
+}
+
+pub fn warm_up_connection() {
+    std::thread::spawn(|| {
+        if let Ok(rt) = tokio::runtime::Runtime::new() {
+            rt.block_on(async {
+                let client = get_client();
+                let _ = client.head("https://generativelanguage.googleapis.com").send().await;
+            });
+        }
+    });
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AIAnalysis {
@@ -17,7 +41,7 @@ pub async fn analyze_command(
     targets: &[FsTarget],
 ) -> Result<AIAnalysis, Box<dyn std::error::Error>> {
     let api_key = env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not found in .env")?;
-    let client = Client::new();
+    let client = get_client();
 
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={}",
@@ -46,20 +70,14 @@ pub async fn analyze_command(
         }
     });
 
-    let res = client.post(&url)
-        .json(&body)
-        .send()
-        .await?;
-
+    let res = client.post(&url).json(&body).send().await?;
     let res_json: serde_json::Value = res.json().await?;
 
-    // Check if the API returned an explicit error (like invalid API key)
     if let Some(err) = res_json.get("error") {
         return Err(format!("Google API Error: {}", err).into());
     }
 
     if let Some(text_response) = res_json["candidates"][0]["content"]["parts"][0]["text"].as_str() {
-        // Strip out markdown code fences if Gemini included them
         let mut clean_text = text_response.trim();
         if clean_text.starts_with("```json") {
             clean_text = &clean_text[7..];
@@ -71,7 +89,6 @@ pub async fn analyze_command(
         }
         clean_text = clean_text.trim();
 
-        // Attempt to parse the cleaned JSON
         match serde_json::from_str(clean_text) {
             Ok(analysis) => Ok(analysis),
             Err(e) => Err(format!("JSON Parse Error: {}. Raw text: {}", e, clean_text).into())

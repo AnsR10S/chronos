@@ -6,13 +6,9 @@ use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
 use crate::chronos::state::tracker::track_targets;
 use crate::chronos::transaction::manager::{Transaction, TransactionStatus, record_transaction};
-use crate::chronos::ai::client::analyze_command as ai_analyze;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+
 
 pub fn is_builtin(cmd: &str) -> bool {
     BUILTINS.contains(&cmd)
@@ -113,54 +109,74 @@ pub fn execute(chunk: Vec<String>) -> bool {
         }
 
         if !is_meta_command && (assessment.level == RiskLevel::Unknown || assessment.level == RiskLevel::VeryHigh) {
-
-            // Setup the animated spinner on a background thread
-            let is_loading = Arc::new(AtomicBool::new(true));
+            let is_loading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
             let loading_clone = is_loading.clone();
 
-            let spinner = thread::spawn(move || {
+            let spinner = std::thread::spawn(move || {
                 let frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
                 let mut i = 0;
-                while loading_clone.load(Ordering::Relaxed) {
+                while loading_clone.load(std::sync::atomic::Ordering::Relaxed) {
                     print!("\r[CHRONOS] \x1b[35mConsulting AI Semantic Layer... {}\x1b[0m", frames[i]);
                     let _ = io::stdout().flush();
                     i = (i + 1) % frames.len();
-                    thread::sleep(Duration::from_millis(80));
+                    std::thread::sleep(std::time::Duration::from_millis(80));
                 }
-                // Erase the spinner line when finished
                 print!("\r\x1b[2K");
                 let _ = io::stdout().flush();
             });
 
-            // Fetchs the AI response
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let ai_result = rt.block_on(ai_analyze(&command_line, &assessment, &targets));
+            // Use the global runtime instead of creating a new one
+            let rt = crate::chronos::ai::client::ASYNC_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+            let ai_result = rt.block_on(crate::chronos::ai::client::analyze_command(&command_line, &assessment, &targets));
 
-            // Stops the spinner
-            is_loading.store(false, Ordering::Relaxed);
+            is_loading.store(false, std::sync::atomic::Ordering::Relaxed);
             let _ = spinner.join();
 
-            // Handles the response
             match ai_result {
                 Ok(ai_response) => {
                     println!("\n┌──────────────── \x1b[1mAI SEMANTIC ANALYSIS\x1b[0m ────────────────┐");
                     println!("│ \x1b[36mIntent:\x1b[0m {}", ai_response.intent);
                     println!("│ \x1b[36mExplanation:\x1b[0m {}", ai_response.explanation);
-                    println!("│ \x1b[36mRecommendation:\x1b[0m {}", ai_response.recommendation);
+                    println!("│ \x1b[36mRecommendation:\x1b[0m {:?}", ai_response.recommendation);
                     println!("└──────────────────────────────────────────────────────┘\n");
 
-                    print!("[CHRONOS] Proceed with execution? [y/N]: ");
-                    let _ = io::stdout().flush();
-                    let mut input = String::new();
-                    io::stdin().read_line(&mut input).unwrap();
-
-                    if !input.trim().eq_ignore_ascii_case("y") {
-                        println!("[CHRONOS] \x1b[33mCommand blocked by user.\x1b[0m");
+                    // Structured decision handling based on the Enum
+                    if ai_response.recommendation == crate::chronos::ai::client::AIRecommendation::Block {
+                        println!("[CHRONOS] \x1b[31mCommand blocked by AI Semantic Layer recommendation.\x1b[0m");
                         return false;
+                    }
+
+                    if ai_response.recommendation == crate::chronos::ai::client::AIRecommendation::Escalate
+                        || assessment.level == RiskLevel::VeryHigh
+                    {
+                        print!("[CHRONOS] \x1b[33mAI Escalate / Very High Risk. Proceed with execution? [y/N]: \x1b[0m");
+                        let _ = io::stdout().flush();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap();
+
+                        if !input.trim().eq_ignore_ascii_case("y") {
+                            println!("[CHRONOS] Command blocked by user.");
+                            return false;
+                        }
                     }
                 }
                 Err(e) => {
-                    println!("[CHRONOS] \x1b[31m⚠ AI Analysis Failed: {}\x1b[0m", e);
+                    println!("[CHRONOS] \x1b[31m⚠ AI Analysis Failed (Timeout/Network): {}\x1b[0m", e);
+
+                    // AI Failure Policy Enforcement
+                    if assessment.level == RiskLevel::VeryHigh {
+                        println!("[CHRONOS] \x1b[31mPOLICY: Fail-Closed. Very High risk commands are blocked when AI is unavailable.\x1b[0m");
+                        return false;
+                    } else {
+                        print!("[CHRONOS] \x1b[33mPOLICY: Escalate. Unknown command with no AI guidance. Proceed? [y/N]: \x1b[0m");
+                        let _ = io::stdout().flush();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap();
+                        if !input.trim().eq_ignore_ascii_case("y") {
+                            println!("[CHRONOS] Command blocked by user.");
+                            return false;
+                        }
+                    }
                 }
             }
         }

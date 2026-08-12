@@ -10,7 +10,6 @@ use std::io::{self, Write};
 fn main() {
     dotenv::dotenv().ok();
 
-    // Establish the connection to Google instantly in the background
     crate::chronos::ai::client::warm_up_connection();
 
     shell::repl::start();

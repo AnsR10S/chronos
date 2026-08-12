@@ -8,5 +8,7 @@ pub mod shell;
 use std::io::{self, Write};
 
 fn main() {
+    dotenv::dotenv().ok(); // Loads environment variables from .env
+    
     shell::repl::start();
 }

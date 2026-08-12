@@ -6,8 +6,9 @@ use crate::executor::expand::expand_args;
 use crate::chronos::risk::analyzer::{analyze_command, RiskLevel};
 use crate::chronos::state::tracker::track_targets;
 use crate::chronos::transaction::manager::{Transaction, TransactionStatus, record_transaction};
+use crate::chronos::ai::client::analyze_command as ai_analyze; // Imports the AI client
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 
 pub fn is_builtin(cmd: &str) -> bool {
     BUILTINS.contains(&cmd)
@@ -77,7 +78,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             RiskLevel::Unknown => "\x1b[35mUNKNOWN\x1b[0m",
         };
 
-        let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "redo" | "transactions" | "exit" | "history" | "purge");
+        let is_meta_command = matches!(parsed_cmd.name.as_str(), "undo" | "redo" | "transactions" | "history" | "exit" | "purge");
 
         if !is_meta_command {
             println!("[CHRONOS] Assessed Risk: {} (Score: {}, Confidence: {}%)",
@@ -103,6 +104,36 @@ pub fn execute(chunk: Vec<String>) -> bool {
                         "Does Not Exist".to_string()
                     };
                     println!("  -> {}: {}", target.path, status);
+                }
+            }
+        }
+
+        if !is_meta_command && (assessment.level == RiskLevel::Unknown || assessment.level == RiskLevel::VeryHigh) {
+            println!("\n[CHRONOS] \x1b[35mConsulting AI Semantic Layer...\x1b[0m");
+
+            // Bridge the sync shell to the async Gemini client
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            match rt.block_on(ai_analyze(&command_line, &assessment, &targets)) {
+                Ok(ai_response) => {
+                    println!("\n┌──────────────── \x1b[1mAI SEMANTIC ANALYSIS\x1b[0m ────────────────┐");
+                    println!("│ \x1b[36mIntent:\x1b[0m {}", ai_response.intent);
+                    println!("│ \x1b[36mExplanation:\x1b[0m {}", ai_response.explanation);
+                    println!("│ \x1b[36mRecommendation:\x1b[0m {}", ai_response.recommendation);
+                    println!("└──────────────────────────────────────────────────────┘\n");
+
+                    // Human-in-the-loop confirmation for high risk
+                    print!("[CHRONOS] Proceed with execution? [y/N]: ");
+                    let _ = io::stdout().flush();
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input).unwrap();
+
+                    if !input.trim().eq_ignore_ascii_case("y") {
+                        println!("[CHRONOS] \x1b[33mCommand blocked by user.\x1b[0m");
+                        return false;
+                    }
+                }
+                Err(e) => {
+                    println!("[CHRONOS] \x1b[31m⚠ AI Analysis Failed: {}\x1b[0m", e);
                 }
             }
         }

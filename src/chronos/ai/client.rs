@@ -8,14 +8,12 @@ use crate::chronos::state::tracker::FsTarget;
 
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
-// Global Tokio Runtime so we don't recreate it every command
 pub static ASYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 fn get_client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .pool_idle_timeout(Some(Duration::from_secs(120)))
-            // Hard 3-second timeout so the shell never hangs forever
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap_or_default()
@@ -32,7 +30,6 @@ pub fn warm_up_connection() {
     });
 }
 
-// Structured AI Decision Enum
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum AIRecommendation {
     Proceed,
@@ -61,7 +58,6 @@ pub async fn analyze_command(
         api_key
     );
 
-    // Richer context serialization for Gemini
     let targets_json = serde_json::to_string_pretty(targets).unwrap_or_default();
     let risk_json = serde_json::to_string_pretty(assessment).unwrap_or_default();
 

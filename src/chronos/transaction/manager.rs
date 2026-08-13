@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use crate::chronos::risk::analyzer::RiskAssessment;
 use crate::chronos::state::tracker::FsTarget;
+use crate::chronos::transaction::snapshot::restore_snapshot;
 
 static TX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -24,7 +25,7 @@ pub struct Transaction {
     pub id: String,
     pub timestamp: u128,
     pub command_line: String,
-    #[serde(default)] 
+    #[serde(default)]
     pub chunk: Vec<String>,
     pub assessment: RiskAssessment,
     pub targets: Vec<FsTarget>,
@@ -144,4 +145,33 @@ pub fn parse_transaction_targets(args: &[String], registry: &[Transaction]) -> R
     }
 
     Ok(indices)
+}
+
+pub fn recover_crashed_transactions() {
+    let mut registry = transaction_registry().lock().unwrap();
+    let mut needs_save = false;
+
+    for tx in registry.iter_mut() {
+        if tx.status == TransactionStatus::Executing || tx.status == TransactionStatus::Prepared {
+            println!("[CHRONOS] ⚠ CRASH RECOVERY: Found incomplete transaction {} (was {:?})", tx.id, tx.status);
+
+            if !tx.targets.is_empty() {
+                match restore_snapshot(&tx.id, &tx.targets) {
+                    Ok(_) => println!("[CHRONOS] Successfully rolled back partial state for {}.", tx.id),
+                    Err(e) => println!("[CHRONOS] ⚠ Failed to restore partial state for {}: {}", tx.id, e),
+                }
+            }
+
+            // Mark it as rolled back so it doesn't try to recover again next boot
+            tx.status = TransactionStatus::RolledBack;
+            needs_save = true;
+        }
+    }
+
+    if needs_save {
+        // Drop the lock before calling save_registry to avoid a deadlock
+        drop(registry);
+        save_registry();
+        println!("[CHRONOS] Crash recovery complete.");
+    }
 }

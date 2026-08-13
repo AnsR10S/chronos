@@ -125,7 +125,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
                 let _ = io::stdout().flush();
             });
 
-            // Use the global runtime instead of creating a new one
             let rt = crate::chronos::ai::client::ASYNC_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
             let ai_result = rt.block_on(crate::chronos::ai::client::analyze_command(&command_line, &assessment, &targets));
 
@@ -140,7 +139,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
                     println!("│ \x1b[36mRecommendation:\x1b[0m {:?}", ai_response.recommendation);
                     println!("└──────────────────────────────────────────────────────┘\n");
 
-                    // Structured decision handling based on the Enum
                     if ai_response.recommendation == crate::chronos::ai::client::AIRecommendation::Block {
                         println!("[CHRONOS] \x1b[31mCommand blocked by AI Semantic Layer recommendation.\x1b[0m");
                         return false;
@@ -163,7 +161,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
                 Err(e) => {
                     println!("[CHRONOS] \x1b[31m⚠ AI Analysis Failed (Timeout/Network): {}\x1b[0m", e);
 
-                    // AI Failure Policy Enforcement
                     if assessment.level == RiskLevel::VeryHigh {
                         println!("[CHRONOS] \x1b[31mPOLICY: Fail-Closed. Very High risk commands are blocked when AI is unavailable.\x1b[0m");
                         return false;
@@ -219,6 +216,8 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
 
+        let mut command_found = true; // Tracks if the command actually exists
+
         if status == BuiltinStatus::NotHandled {
             if builtins::find_executable(&parsed_cmd.name).is_some() {
                 if is_background {
@@ -227,6 +226,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
                     process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
                 }
             } else {
+                command_found = false; // The command doesn't exist!
                 let error_msg = format!("{}: command not found\n", parsed_cmd.name);
                 match &parsed_cmd.stderr {
                     Redirect::None => eprint!("{}", error_msg),
@@ -241,8 +241,14 @@ pub fn execute(chunk: Vec<String>) -> bool {
         }
 
         if let Some(mut tx) = active_tx {
-            tx.transition_to(TransactionStatus::Committed);
-            println!("[CHRONOS] Transaction Committed.");
+            if command_found {
+                tx.transition_to(TransactionStatus::Committed);
+                println!("[CHRONOS] Transaction Committed.");
+            } else {
+                // FIX: Do not commit failed or missing commands
+                tx.transition_to(TransactionStatus::Failed);
+                println!("[CHRONOS] Transaction Failed (Command not found).");
+            }
             record_transaction(tx);
         }
 

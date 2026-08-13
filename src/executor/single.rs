@@ -9,7 +9,6 @@ use crate::chronos::transaction::manager::{Transaction, TransactionStatus, recor
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 
-
 pub fn is_builtin(cmd: &str) -> bool {
     BUILTINS.contains(&cmd)
 }
@@ -57,7 +56,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
     let command_line = chunk.join(" ");
 
     if let Some(mut parsed_cmd) = parser::parse(chunk.clone()) {
-
         let mut is_background = false;
 
         if parsed_cmd.args.last().map(|s| s.as_str()) == Some("&") {
@@ -178,7 +176,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        let active_tx = if !is_meta_command {
+        let mut active_tx = if !is_meta_command {
             let mut tx = Transaction::new(command_line, chunk.clone(), assessment.clone(), targets);
             println!("[CHRONOS] Transaction Created: {}", tx.id);
 
@@ -188,8 +186,13 @@ pub fn execute(chunk: Vec<String>) -> bool {
             {
                 println!("[CHRONOS] Securing targets...");
                 if let Err(e) = crate::chronos::transaction::snapshot::create_snapshot(&tx.id, &tx.targets) {
-                    eprintln!("[CHRONOS] ⚠ WARNING: Failed to create snapshot: {}", e);
+                    eprintln!("[CHRONOS] \x1b[31m⚠ CRITICAL: Failed to create snapshot: {}\x1b[0m", e);
                     tx.transition_to(TransactionStatus::Failed);
+                    record_transaction(tx);
+
+                    // NEW INVARIANT: Abort execution completely if we cannot secure the snapshot!
+                    println!("[CHRONOS] \x1b[31mCommand aborted to preserve system safety.\x1b[0m");
+                    return false;
                 } else {
                     tx.transition_to(TransactionStatus::Prepared);
                     println!("[CHRONOS] Snapshot secured successfully.");
@@ -216,17 +219,17 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
 
-        let mut command_found = true;
+        let mut execution_success = true; // Track actual execution success
 
         if status == BuiltinStatus::NotHandled {
             if builtins::find_executable(&parsed_cmd.name).is_some() {
-                if is_background {
-                    process::run_background(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
+                execution_success = if is_background {
+                    process::run_background(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr)
                 } else {
-                    process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
-                }
+                    process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr)
+                };
             } else {
-                command_found = false; 
+                execution_success = false;
                 let error_msg = format!("{}: command not found\n", parsed_cmd.name);
                 match &parsed_cmd.stderr {
                     Redirect::None => eprint!("{}", error_msg),
@@ -241,12 +244,12 @@ pub fn execute(chunk: Vec<String>) -> bool {
         }
 
         if let Some(mut tx) = active_tx {
-            if command_found {
+            if execution_success {
                 tx.transition_to(TransactionStatus::Committed);
                 println!("[CHRONOS] Transaction Committed.");
             } else {
                 tx.transition_to(TransactionStatus::Failed);
-                println!("[CHRONOS] Transaction Failed (Command not found).");
+                println!("[CHRONOS] \x1b[31mTransaction Failed (Execution returned non-zero status).\x1b[0m");
             }
             record_transaction(tx);
         }

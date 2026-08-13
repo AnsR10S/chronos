@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::process::{Command as StdCommand, Stdio};
 use crate::parser::ast::Redirect;
 
-pub fn run_external(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) {
+pub fn run_external(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) -> bool {
     let mut cmd = StdCommand::new(command);
     cmd.args(args);
 
@@ -30,11 +30,24 @@ pub fn run_external(command: &str, args: &[String], stdout: &Redirect, stderr: &
         }
     }
 
-    let mut child = cmd.spawn().expect("failed to execute process");
-    child.wait().expect("process failed to wait");
+    match cmd.spawn() {
+        Ok(mut child) => {
+            match child.wait() {
+                Ok(status) => status.success(),
+                Err(e) => {
+                    eprintln!("process failed to wait: {}", e);
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("failed to execute process: {}", e);
+            false
+        }
+    }
 }
 
-pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) {
+pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr: &Redirect) -> bool {
     let mut cmd = StdCommand::new(command);
     cmd.args(args);
 
@@ -75,9 +88,14 @@ pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr:
 
             let job_id = crate::shell::state::jobs::add_job(child, full_cmd);
             println!("[{}] {}", job_id, pid);
+
+            // Background commands are considered successfully "executed"
+            // once they are spawned, as we cannot block the shell to wait for them.
+            true
         }
         Err(e) => {
             eprintln!("failed to execute background process: {}", e);
+            false
         }
     }
 }

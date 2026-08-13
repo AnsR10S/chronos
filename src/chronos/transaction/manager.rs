@@ -162,14 +162,12 @@ pub fn recover_crashed_transactions() {
                 }
             }
 
-            // Mark it as rolled back so it doesn't try to recover again next boot
             tx.status = TransactionStatus::RolledBack;
             needs_save = true;
         }
     }
 
     if needs_save {
-        // Drop the lock before calling save_registry to avoid a deadlock
         drop(registry);
         save_registry();
         println!("[CHRONOS] Crash recovery complete.");

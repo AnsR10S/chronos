@@ -216,7 +216,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
 
-        let mut command_found = true; // Tracks if the command actually exists
+        let mut command_found = true;
 
         if status == BuiltinStatus::NotHandled {
             if builtins::find_executable(&parsed_cmd.name).is_some() {
@@ -226,7 +226,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
                     process::run_external(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout, &parsed_cmd.stderr);
                 }
             } else {
-                command_found = false; // The command doesn't exist!
+                command_found = false; 
                 let error_msg = format!("{}: command not found\n", parsed_cmd.name);
                 match &parsed_cmd.stderr {
                     Redirect::None => eprint!("{}", error_msg),
@@ -245,7 +245,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
                 tx.transition_to(TransactionStatus::Committed);
                 println!("[CHRONOS] Transaction Committed.");
             } else {
-                // FIX: Do not commit failed or missing commands
                 tx.transition_to(TransactionStatus::Failed);
                 println!("[CHRONOS] Transaction Failed (Command not found).");
             }

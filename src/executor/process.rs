@@ -89,8 +89,6 @@ pub fn run_background(command: &str, args: &[String], stdout: &Redirect, stderr:
             let job_id = crate::shell::state::jobs::add_job(child, full_cmd);
             println!("[{}] {}", job_id, pid);
 
-            // Background commands are considered successfully "executed"
-            // once they are spawned, as we cannot block the shell to wait for them.
             true
         }
         Err(e) => {

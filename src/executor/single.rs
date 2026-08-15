@@ -176,7 +176,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
             }
         }
 
-        let mut active_tx = if !is_meta_command {
+        let active_tx = if !is_meta_command {
             let mut tx = Transaction::new(command_line, chunk.clone(), assessment.clone(), targets);
             println!("[CHRONOS] Transaction Created: {}", tx.id);
 
@@ -190,7 +190,6 @@ pub fn execute(chunk: Vec<String>) -> bool {
                     tx.transition_to(TransactionStatus::Failed);
                     record_transaction(tx);
 
-                    // NEW INVARIANT: Abort execution completely if we cannot secure the snapshot!
                     println!("[CHRONOS] \x1b[31mCommand aborted to preserve system safety.\x1b[0m");
                     return false;
                 } else {
@@ -219,7 +218,7 @@ pub fn execute(chunk: Vec<String>) -> bool {
 
         let status = builtins::execute(&parsed_cmd.name, &parsed_cmd.args, &parsed_cmd.stdout);
 
-        let mut execution_success = true; // Track actual execution success
+        let mut execution_success = true;
 
         if status == BuiltinStatus::NotHandled {
             if builtins::find_executable(&parsed_cmd.name).is_some() {
